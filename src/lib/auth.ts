@@ -1,7 +1,5 @@
 import { NextAuthOptions, getServerSession as _getServerSession } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
-import { SupabaseAdapter } from '@next-auth/supabase-adapter'
-import jwt from 'jsonwebtoken'
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vipaymanshalaby@gmail.com'
 
@@ -12,10 +10,6 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
-  adapter: SupabaseAdapter({
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    secret: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  }),
   session: {
     strategy: 'jwt',
   },
@@ -28,6 +22,8 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id
         token.email = user.email
+        token.name = user.name
+        token.picture = user.image
         // Assign admin plan to admin email, else default free
         token.plan = user.email === ADMIN_EMAIL ? 'admin' : 'free'
       }
@@ -38,6 +34,8 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string
         session.user.plan = token.plan as string
         session.user.email = token.email as string
+        session.user.name = token.name as string
+        session.user.image = token.picture as string
       }
       return session
     },
@@ -75,5 +73,6 @@ declare module 'next-auth/jwt' {
   interface JWT {
     id: string
     plan: string
+    picture?: string
   }
 }
