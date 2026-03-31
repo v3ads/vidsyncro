@@ -37,6 +37,8 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   const videoBRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const holdStartRef = useRef<number | null>(null)
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pointerDownTimeRef = useRef<number>(0)
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoSwitchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const sessionIdRef = useRef<string>(Math.random().toString(36).slice(2))
@@ -120,40 +122,81 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     if (!b || !a) return
     b.currentTime = a.currentTime
     b.play().catch(() => {})
+    // Switch audio: unmute B, mute A (unless global mute is on)
+    if (!ec.muted) {
+      a.muted = true
+      b.muted = false
+    }
     setShowingB(true)
     setSwitchFlash(true)
     setTimeout(() => setSwitchFlash(false), 300)
     holdStartRef.current = Date.now()
     if (oc.showHint) setShowHint(false)
     trackEvent('hold_start', { currentTime: a.currentTime })
-  }, [oc.showHint, trackEvent])
+  }, [oc.showHint, ec.muted, trackEvent])
 
   const switchToA = useCallback(() => {
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
     a.currentTime = b.currentTime
+    // Switch audio back: unmute A, mute B (unless global mute is on)
+    if (!ec.muted) {
+      b.muted = true
+      a.muted = false
+    }
     setShowingB(false)
     if (holdStartRef.current) {
       const duration = (Date.now() - holdStartRef.current) / 1000
       trackEvent('hold_end', { duration, currentTime: b.currentTime })
       holdStartRef.current = null
     }
-  }, [trackEvent])
+  }, [ec.muted, trackEvent])
+
+  // ── Play/Pause (defined before handlers so hold mode can reference it) ────────────────
+  const togglePlay = useCallback(() => {
+    const a = videoARef.current
+    const b = videoBRef.current
+    if (!a || !b) return
+    if (a.paused) { a.play().catch(() => {}); b.play().catch(() => {}); setIsPlaying(true) }
+    else { a.pause(); b.pause(); setIsPlaying(false) }
+  }, [])
 
   // ── Mouse / Touch handlers ───────────────────────────────────────────────────
+  // Hold mode uses a 200ms threshold: short press = play/pause, sustained = reveal B
+  const HOLD_THRESHOLD = 200
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return
-    if (oc.switchMode === 'hold') switchToB()
-    else if (oc.switchMode === 'toggle') { if (showingB) switchToA(); else switchToB() }
+    if (oc.switchMode === 'hold') {
+      pointerDownTimeRef.current = Date.now()
+      holdTimerRef.current = setTimeout(() => switchToB(), HOLD_THRESHOLD)
+    } else if (oc.switchMode === 'toggle') {
+      if (showingB) switchToA(); else switchToB()
+    }
   }, [oc.switchMode, showingB, switchToA, switchToB])
 
   const handleMouseUp = useCallback(() => {
-    if (oc.switchMode === 'hold') switchToA()
-  }, [oc.switchMode, switchToA])
+    if (oc.switchMode === 'hold') {
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current)
+        holdTimerRef.current = null
+      }
+      const elapsed = Date.now() - pointerDownTimeRef.current
+      if (elapsed < HOLD_THRESHOLD) {
+        // Short tap — play/pause instead
+        togglePlay()
+      } else {
+        switchToA()
+      }
+    }
+  }, [oc.switchMode, switchToA, togglePlay])
 
   const handleMouseLeave = useCallback(() => {
-    if (oc.switchMode === 'hold' && showingB) switchToA()
+    if (oc.switchMode === 'hold') {
+      if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null }
+      if (showingB) switchToA()
+    }
     if (oc.switchMode === 'hover' && showingB) switchToA()
   }, [oc.switchMode, showingB, switchToA])
 
@@ -162,18 +205,35 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   }, [oc.switchMode, switchToB])
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    // Don't preventDefault on password screen inputs
     if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'BUTTON') return
     e.preventDefault()
-    if (oc.switchMode === 'hold') switchToB()
-    else if (oc.switchMode === 'toggle') { if (showingB) switchToA(); else switchToB() }
-    if ('vibrate' in navigator) navigator.vibrate(30)
+    if (oc.switchMode === 'hold') {
+      pointerDownTimeRef.current = Date.now()
+      holdTimerRef.current = setTimeout(() => {
+        switchToB()
+        if ('vibrate' in navigator) navigator.vibrate(30)
+      }, HOLD_THRESHOLD)
+    } else if (oc.switchMode === 'toggle') {
+      if (showingB) switchToA(); else switchToB()
+    }
   }, [oc.switchMode, showingB, switchToA, switchToB])
 
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'BUTTON') return
-    if (oc.switchMode === 'hold') switchToA()
-  }, [oc.switchMode, switchToA])
+    if (oc.switchMode === 'hold') {
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current)
+        holdTimerRef.current = null
+      }
+      const elapsed = Date.now() - pointerDownTimeRef.current
+      if (elapsed < HOLD_THRESHOLD) {
+        // Short tap — play/pause
+        togglePlay()
+      } else {
+        switchToA()
+      }
+    }
+  }, [oc.switchMode, switchToA, togglePlay])
 
   // ── Keyboard ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -195,16 +255,7 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey) }
   }, [switchToA, switchToB])
 
-  // ── Play/Pause ───────────────────────────────────────────────────────────────
-  const togglePlay = useCallback(() => {
-    const a = videoARef.current
-    const b = videoBRef.current
-    if (!a || !b) return
-    if (a.paused) { a.play().catch(() => {}); b.play().catch(() => {}); setIsPlaying(true) }
-    else { a.pause(); b.pause(); setIsPlaying(false) }
-  }, [])
-
-  // ── Fullscreen ───────────────────────────────────────────────────────────────
+  // ── Fullscreen ───────────────────────────────────────────────────────────────────
   const toggleFullscreen = useCallback(() => {
     if (!containerRef.current) return
     if (!document.fullscreenElement) {
@@ -398,7 +449,7 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
         ref={videoBRef}
         style={getVideoBStyle()}
         playsInline
-        muted
+        muted={ec.muted || true} /* starts muted; unmuted imperatively in switchToB */
         loop={ec.loop}
         autoPlay={ec.autoplay}
         preload="auto"
@@ -501,14 +552,15 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
             background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 40%)',
           }}
         >
-          {/* Play button — only when paused */}
+          {/* Play button — only when paused (pointer-events: none in hold mode so hold gesture works) */}
           {!isPlaying && (
             <div
               style={{
                 position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', pointerEvents: 'auto',
+                justifyContent: 'center',
+                pointerEvents: oc.switchMode === 'hold' ? 'none' : 'auto',
               }}
-              onClick={togglePlay}
+              onClick={oc.switchMode !== 'hold' ? togglePlay : undefined}
             >
               <div
                 style={{
