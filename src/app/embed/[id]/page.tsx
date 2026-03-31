@@ -32,7 +32,6 @@ export default async function EmbedPage({ params }: Props) {
 
   if (!raw) notFound()
 
-  // Map snake_case DB fields to camelCase Project type
   const project: Project = {
     id: raw.id,
     userId: raw.user_id,
@@ -52,8 +51,35 @@ export default async function EmbedPage({ params }: Props) {
 
   return (
     <html lang="en">
-      <body style={{ margin: 0, padding: 0, background: 'transparent', overflow: 'hidden' }}>
-        <EmbedPlayer project={project} />
+      <head>
+        {/* Critical for mobile iframe responsiveness */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+        <meta name="theme-color" content="#000000" />
+        <style>{`
+          *, *::before, *::after { box-sizing: border-box; }
+          html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: ${raw.embed_config?.backgroundColor || '#000'};
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
+          }
+          #embed-root {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+        `}</style>
+      </head>
+      <body>
+        <div id="embed-root">
+          <EmbedPlayer project={project} />
+        </div>
       </body>
     </html>
   )
