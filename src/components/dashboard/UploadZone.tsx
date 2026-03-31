@@ -4,12 +4,14 @@ import { motion, AnimatePresence } from "framer-motion"
 interface UploadZoneProps {
   label?: string
   uploadedId?: string
+  projectId?: string
+  videoSlot?: 'a' | 'b'
   onComplete?: (uploadId: string) => void
   onUploadComplete?: (assetId: string, playbackId: string) => void
   onUploadError?: (error: string) => void
 }
 
-export function UploadZone({ label, uploadedId, onComplete, onUploadComplete, onUploadError }: UploadZoneProps) {
+export function UploadZone({ label, uploadedId, projectId, videoSlot, onComplete, onUploadComplete, onUploadError }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -20,13 +22,22 @@ export function UploadZone({ label, uploadedId, onComplete, onUploadComplete, on
       onUploadError?.("Please select a video file")
       return
     }
+    if (!projectId || !videoSlot) {
+      onUploadError?.("Project not ready — please try again")
+      return
+    }
     setIsUploading(true)
     setStatus("Getting upload URL...")
     setProgress(5)
     try {
-      const res = await fetch("/api/videos/mux-upload", { method: "POST" })
+      const res = await fetch("/api/videos/mux-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, videoSlot }),
+      })
       if (!res.ok) throw new Error("Failed to get upload URL")
-      const { uploadUrl, assetId, uploadId } = await res.json()
+      const { uploadUrl, uploadId } = await res.json()
+      const assetId = uploadId
       setStatus("Uploading video...")
       setProgress(20)
       await new Promise<void>((resolve, reject) => {

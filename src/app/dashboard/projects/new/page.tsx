@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { UploadZone } from '@/components/dashboard/UploadZone'
-import { generateSlug, generateEmbedId } from '@/lib/utils'
+import { generateEmbedId } from '@/lib/utils'
 import { DEFAULT_OVERLAY_CONFIG, DEFAULT_EMBED_CONFIG, type SwitchMode, type TransitionType } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -22,6 +22,7 @@ export default function NewProjectPage() {
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [projectId, setProjectId] = useState<string | null>(null)
   const [uploadIdA, setUploadIdA] = useState<string | null>(null)
   const [uploadIdB, setUploadIdB] = useState<string | null>(null)
   const [switchMode, setSwitchMode] = useState<SwitchMode>('hold')
@@ -30,59 +31,54 @@ export default function NewProjectPage() {
   const [publish, setPublish] = useState(false)
 
   async function createProject() {
+    if (!projectId) return
     setCreating(true)
     try {
-      const res = await fetch('/api/projects', {
-        method: 'POST',
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title,
-          slug: generateSlug(title),
-          description: description || null,
-          videoA: uploadIdA
-            ? {
-                id: generateEmbedId(),
-                muxUploadId: uploadIdA,
-                muxAssetId: null,
-                muxPlaybackId: null,
-                status: 'pending',
-                duration: null,
-                aspectRatio: null,
-                thumbnailUrl: null,
-              }
-            : null,
-          videoB: uploadIdB
-            ? {
-                id: generateEmbedId(),
-                muxUploadId: uploadIdB,
-                muxAssetId: null,
-                muxPlaybackId: null,
-                status: 'pending',
-                duration: null,
-                aspectRatio: null,
-                thumbnailUrl: null,
-              }
-            : null,
-          overlayConfig: {
+          overlay_config: {
             ...DEFAULT_OVERLAY_CONFIG,
             switchMode,
             transitionType,
             hintText,
           },
-          embedConfig: DEFAULT_EMBED_CONFIG,
+          embed_config: DEFAULT_EMBED_CONFIG,
           status: publish ? 'published' : 'draft',
         }),
       })
 
-      if (!res.ok) throw new Error('Failed to create project')
-      const project = await res.json()
+      if (!res.ok) throw new Error('Failed to update project')
 
       toast.success('Project created!')
-      router.push(`/dashboard/projects/${project.id}/editor`)
+      router.push(`/dashboard/projects/${projectId}/editor`)
     } catch (err) {
       toast.error('Failed to create project')
       setCreating(false)
     }
+  }
+
+  async function handleContinue() {
+    if (currentStep === 1) {
+      // Create the draft project now so we have a projectId for uploads
+      if (!projectId) {
+        try {
+          const res = await fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, description: description || null }),
+          })
+          if (!res.ok) { toast.error('Failed to create project'); return }
+          const proj = await res.json()
+          setProjectId(proj.id)
+        } catch {
+          toast.error('Failed to create project')
+          return
+        }
+      }
+    }
+    setCurrentStep((s) => s + 1)
   }
 
   const canProceed = () => {
@@ -196,7 +192,10 @@ export default function NewProjectPage() {
               </p>
               <UploadZone
                 label="Reality A"
+                projectId={projectId ?? undefined}
+                videoSlot="a"
                 onComplete={(uploadId) => setUploadIdA(uploadId)}
+                onUploadError={(err) => toast.error(err)}
                 uploadedId={uploadIdA}
               />
             </motion.div>
@@ -216,7 +215,10 @@ export default function NewProjectPage() {
               </p>
               <UploadZone
                 label="Reality B"
+                projectId={projectId ?? undefined}
+                videoSlot="b"
                 onComplete={(uploadId) => setUploadIdB(uploadId)}
+                onUploadError={(err) => toast.error(err)}
                 uploadedId={uploadIdB}
               />
             </motion.div>
@@ -328,7 +330,7 @@ export default function NewProjectPage() {
 
           {currentStep < 4 ? (
             <button
-              onClick={() => setCurrentStep((s) => s + 1)}
+              onClick={handleContinue}
               disabled={!canProceed()}
               className="px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
