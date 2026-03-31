@@ -40,6 +40,9 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pointerDownTimeRef = useRef<number>(0)
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Guard: set true during any programmatic play/pause/seek so mirror listeners
+  // ignore events they themselves triggered (prevents feedback loops)
+  const isSyncingRef = useRef(false)
   const autoSwitchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const sessionIdRef = useRef<string>(Math.random().toString(36).slice(2))
   const viewTrackedRef = useRef(false)
@@ -93,37 +96,59 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   }, [isPasswordUnlocked, trackEvent])
 
   // ── Sync engine ─────────────────────────────────────────────────────────────
+  // Only corrects meaningful timestamp drift (> 1s). Does NOT touch play/pause
+  // state here — that is handled exclusively by the event listeners below.
   const syncVideos = useCallback(() => {
     const a = videoARef.current
     const b = videoBRef.current
-    if (!a || !b) return
-    // Sync timestamp
+    if (!a || !b || isSyncingRef.current) return
     const diff = Math.abs(a.currentTime - b.currentTime)
-    if (diff > 0.5) b.currentTime = a.currentTime
-    // Sync play/pause state: if one is paused the other should be too
-    if (a.paused !== b.paused) {
-      if (a.paused) { b.pause(); setIsPlaying(false) }
-      else { b.play().catch(() => {}); setIsPlaying(true) }
+    if (diff > 1.0) {
+      isSyncingRef.current = true
+      b.currentTime = a.currentTime
+      setTimeout(() => { isSyncingRef.current = false }, 100)
     }
   }, [])
 
   useEffect(() => {
-    syncIntervalRef.current = setInterval(syncVideos, 500)
+    syncIntervalRef.current = setInterval(syncVideos, 1000)
     return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current) }
   }, [syncVideos])
 
   // ── Play/pause mirror via native events ──────────────────────────────────────
-  // Ensures that if either video is paused/played by any means (autoplay policy,
-  // buffering stall, native controls, etc.) the other video mirrors it immediately.
+  // Mirrors play/pause from either video to the other. The isSyncingRef guard
+  // prevents the mirrored call from triggering another mirror (feedback loop).
   useEffect(() => {
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
 
-    const onAPause = () => { if (!b.paused) { b.pause(); setIsPlaying(false) } }
-    const onAPlay  = () => { if (b.paused)  { b.play().catch(() => {}); setIsPlaying(true) } }
-    const onBPause = () => { if (!a.paused) { a.pause(); setIsPlaying(false) } }
-    const onBPlay  = () => { if (a.paused)  { a.play().catch(() => {}); setIsPlaying(true) } }
+    const onAPause = () => {
+      if (isSyncingRef.current || b.paused) return
+      isSyncingRef.current = true
+      b.pause()
+      setIsPlaying(false)
+      setTimeout(() => { isSyncingRef.current = false }, 50)
+    }
+    const onAPlay = () => {
+      if (isSyncingRef.current || !b.paused) return
+      isSyncingRef.current = true
+      b.play().catch(() => {}).finally(() => { setTimeout(() => { isSyncingRef.current = false }, 50) })
+      setIsPlaying(true)
+    }
+    const onBPause = () => {
+      if (isSyncingRef.current || a.paused) return
+      isSyncingRef.current = true
+      a.pause()
+      setIsPlaying(false)
+      setTimeout(() => { isSyncingRef.current = false }, 50)
+    }
+    const onBPlay = () => {
+      if (isSyncingRef.current || !a.paused) return
+      isSyncingRef.current = true
+      a.play().catch(() => {}).finally(() => { setTimeout(() => { isSyncingRef.current = false }, 50) })
+      setIsPlaying(true)
+    }
 
     a.addEventListener('pause', onAPause)
     a.addEventListener('play',  onAPlay)
@@ -136,7 +161,7 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
       b.removeEventListener('pause', onBPause)
       b.removeEventListener('play',  onBPlay)
     }
-  }, [isLoaded]) // re-attach after both videos are loaded
+  }, [isLoaded])
 
   // ── Auto-switch ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -147,13 +172,15 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     return () => { if (autoSwitchIntervalRef.current) clearInterval(autoSwitchIntervalRef.current) }
   }, [oc.autoSwitchEnabled, oc.autoSwitchInterval, isPlaying])
 
-  // ── Switch helpers ───────────────────────────────────────────────────────────
+  // ── Switch helpers ─────────────────────────────────────────────────────────────
   const switchToB = useCallback(() => {
     const a = videoARef.current
     const b = videoBRef.current
     if (!b || !a) return
+    // Guard so the b.play() call below doesn’t trigger the mirror listener
+    isSyncingRef.current = true
     b.currentTime = a.currentTime
-    b.play().catch(() => {})
+    b.play().catch(() => {}).finally(() => { setTimeout(() => { isSyncingRef.current = false }, 100) })
     // Switch audio: unmute B, mute A (unless global mute is on)
     if (!ec.muted) {
       a.muted = true
@@ -171,7 +198,10 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
+    // Guard so the currentTime assignment doesn’t trigger spurious events
+    isSyncingRef.current = true
     a.currentTime = b.currentTime
+    setTimeout(() => { isSyncingRef.current = false }, 100)
     // Switch audio back: unmute A, mute B (unless global mute is on)
     if (!ec.muted) {
       b.muted = true
@@ -190,8 +220,18 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
-    if (a.paused) { a.play().catch(() => {}); b.play().catch(() => {}); setIsPlaying(true) }
-    else { a.pause(); b.pause(); setIsPlaying(false) }
+    // Guard prevents the mirror listeners from re-triggering during this call
+    isSyncingRef.current = true
+    if (a.paused) {
+      Promise.all([a.play().catch(() => {}), b.play().catch(() => {})]).finally(() => {
+        setTimeout(() => { isSyncingRef.current = false }, 100)
+      })
+      setIsPlaying(true)
+    } else {
+      a.pause(); b.pause()
+      setIsPlaying(false)
+      setTimeout(() => { isSyncingRef.current = false }, 100)
+    }
   }, [])
 
   // ── Mouse / Touch handlers ───────────────────────────────────────────────────
