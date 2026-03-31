@@ -40,9 +40,9 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pointerDownTimeRef = useRef<number>(0)
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  // Guard: set true during any programmatic play/pause/seek so mirror listeners
-  // ignore events they themselves triggered (prevents feedback loops)
-  const isSyncingRef = useRef(false)
+  // Counts how many programmatic play/pause calls are in-flight.
+  // Mirror listeners skip when this is > 0.
+  const syncDepthRef = useRef(0)
   const autoSwitchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const sessionIdRef = useRef<string>(Math.random().toString(36).slice(2))
   const viewTrackedRef = useRef(false)
@@ -95,18 +95,44 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     }
   }, [isPasswordUnlocked, trackEvent])
 
+  // ── Programmatic play/pause helper ───────────────────────────────────────────────
+  // All play/pause calls go through here. Increments syncDepthRef so mirror
+  // listeners know to ignore the resulting events.
+  const playBoth = useCallback(async () => {
+    const a = videoARef.current
+    const b = videoBRef.current
+    if (!a || !b) return
+    syncDepthRef.current++
+    try {
+      await Promise.all([a.play().catch(() => {}), b.play().catch(() => {})])
+    } finally {
+      syncDepthRef.current--
+      setIsPlaying(true)
+    }
+  }, [])
+
+  const pauseBoth = useCallback(() => {
+    const a = videoARef.current
+    const b = videoBRef.current
+    if (!a || !b) return
+    syncDepthRef.current++
+    a.pause()
+    b.pause()
+    syncDepthRef.current--
+    setIsPlaying(false)
+  }, [])
+
   // ── Sync engine ─────────────────────────────────────────────────────────────
-  // Only corrects meaningful timestamp drift (> 1s). Does NOT touch play/pause
-  // state here — that is handled exclusively by the event listeners below.
+  // Only corrects meaningful timestamp drift (> 1s). Never touches play/pause.
   const syncVideos = useCallback(() => {
     const a = videoARef.current
     const b = videoBRef.current
-    if (!a || !b || isSyncingRef.current) return
+    if (!a || !b || syncDepthRef.current > 0) return
     const diff = Math.abs(a.currentTime - b.currentTime)
     if (diff > 1.0) {
-      isSyncingRef.current = true
+      syncDepthRef.current++
       b.currentTime = a.currentTime
-      setTimeout(() => { isSyncingRef.current = false }, 100)
+      syncDepthRef.current--
     }
   }, [])
 
@@ -116,37 +142,37 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   }, [syncVideos])
 
   // ── Play/pause mirror via native events ──────────────────────────────────────
-  // Mirrors play/pause from either video to the other. The isSyncingRef guard
-  // prevents the mirrored call from triggering another mirror (feedback loop).
+  // Only fires for genuine external events (buffering stall, autoplay block).
+  // Skipped entirely when syncDepthRef > 0 (i.e. we triggered the event ourselves).
   useEffect(() => {
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
 
     const onAPause = () => {
-      if (isSyncingRef.current || b.paused) return
-      isSyncingRef.current = true
+      if (syncDepthRef.current > 0 || b.paused) return
+      syncDepthRef.current++
       b.pause()
       setIsPlaying(false)
-      setTimeout(() => { isSyncingRef.current = false }, 50)
+      syncDepthRef.current--
     }
     const onAPlay = () => {
-      if (isSyncingRef.current || !b.paused) return
-      isSyncingRef.current = true
-      b.play().catch(() => {}).finally(() => { setTimeout(() => { isSyncingRef.current = false }, 50) })
+      if (syncDepthRef.current > 0 || !b.paused) return
+      syncDepthRef.current++
+      b.play().catch(() => {}).finally(() => { syncDepthRef.current-- })
       setIsPlaying(true)
     }
     const onBPause = () => {
-      if (isSyncingRef.current || a.paused) return
-      isSyncingRef.current = true
+      if (syncDepthRef.current > 0 || a.paused) return
+      syncDepthRef.current++
       a.pause()
       setIsPlaying(false)
-      setTimeout(() => { isSyncingRef.current = false }, 50)
+      syncDepthRef.current--
     }
     const onBPlay = () => {
-      if (isSyncingRef.current || !a.paused) return
-      isSyncingRef.current = true
-      a.play().catch(() => {}).finally(() => { setTimeout(() => { isSyncingRef.current = false }, 50) })
+      if (syncDepthRef.current > 0 || !a.paused) return
+      syncDepthRef.current++
+      a.play().catch(() => {}).finally(() => { syncDepthRef.current-- })
       setIsPlaying(true)
     }
 
@@ -177,10 +203,9 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     const a = videoARef.current
     const b = videoBRef.current
     if (!b || !a) return
-    // Guard so the b.play() call below doesn’t trigger the mirror listener
-    isSyncingRef.current = true
+    syncDepthRef.current++
     b.currentTime = a.currentTime
-    b.play().catch(() => {}).finally(() => { setTimeout(() => { isSyncingRef.current = false }, 100) })
+    b.play().catch(() => {}).finally(() => { syncDepthRef.current-- })
     // Switch audio: unmute B, mute A (unless global mute is on)
     if (!ec.muted) {
       a.muted = true
@@ -198,10 +223,9 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
-    // Guard so the currentTime assignment doesn’t trigger spurious events
-    isSyncingRef.current = true
+    syncDepthRef.current++
     a.currentTime = b.currentTime
-    setTimeout(() => { isSyncingRef.current = false }, 100)
+    syncDepthRef.current--
     // Switch audio back: unmute A, mute B (unless global mute is on)
     if (!ec.muted) {
       b.muted = true
@@ -218,21 +242,9 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   // ── Play/Pause (defined before handlers so hold mode can reference it) ────────────────
   const togglePlay = useCallback(() => {
     const a = videoARef.current
-    const b = videoBRef.current
-    if (!a || !b) return
-    // Guard prevents the mirror listeners from re-triggering during this call
-    isSyncingRef.current = true
-    if (a.paused) {
-      Promise.all([a.play().catch(() => {}), b.play().catch(() => {})]).finally(() => {
-        setTimeout(() => { isSyncingRef.current = false }, 100)
-      })
-      setIsPlaying(true)
-    } else {
-      a.pause(); b.pause()
-      setIsPlaying(false)
-      setTimeout(() => { isSyncingRef.current = false }, 100)
-    }
-  }, [])
+    if (!a) return
+    if (a.paused) playBoth(); else pauseBoth()
+  }, [playBoth, pauseBoth])
 
   // ── Mouse / Touch handlers ───────────────────────────────────────────────────
   // Hold mode uses a 200ms threshold: short press = play/pause, sustained = reveal B
@@ -315,8 +327,7 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
         e.preventDefault()
         const a = videoARef.current
         if (!a) return
-        if (a.paused) { a.play(); videoBRef.current?.play() }
-        else { a.pause(); videoBRef.current?.pause() }
+        if (a.paused) playBoth(); else pauseBoth()
       }
       if (e.code === 'KeyH') {
         if (e.type === 'keydown') switchToB(); else switchToA()
@@ -325,7 +336,7 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     window.addEventListener('keydown', onKey)
     window.addEventListener('keyup', onKey)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey) }
-  }, [switchToA, switchToB])
+  }, [switchToA, switchToB, playBoth, pauseBoth])
 
   // ── Fullscreen ───────────────────────────────────────────────────────────────────
   const toggleFullscreen = useCallback(() => {
