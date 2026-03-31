@@ -2,6 +2,21 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Project } from '@/types'
+import Hls from 'hls.js'
+
+function attachHls(videoEl: HTMLVideoElement, src: string, onReady: () => void) {
+  if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+    // Safari: native HLS
+    videoEl.src = src
+    videoEl.addEventListener('canplay', onReady, { once: true })
+  } else if (Hls.isSupported()) {
+    const hls = new Hls({ enableWorker: true, lowLatencyMode: false })
+    hls.loadSource(src)
+    hls.attachMedia(videoEl)
+    hls.on(Hls.Events.MANIFEST_PARSED, onReady)
+    ;(videoEl as HTMLVideoElement & { _hls?: Hls })._hls = hls
+  }
+}
 
 interface VidSyncroPlayerProps {
   project: Project
@@ -218,6 +233,29 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     if (isTouchDevice) { setShowControls(true); controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 2500) }
   }, [isLoaded, isTouchDevice])
 
+  // ── Attach HLS streams ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const a = videoARef.current
+    if (!a || !videoA?.muxPlaybackId) return
+    attachHls(a, getMuxHlsUrl(videoA.muxPlaybackId), () => setLoadingA(false))
+    return () => {
+      const h = (a as HTMLVideoElement & { _hls?: Hls })._hls
+      if (h) { h.destroy(); delete (a as HTMLVideoElement & { _hls?: Hls })._hls }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoA?.muxPlaybackId])
+
+  useEffect(() => {
+    const b = videoBRef.current
+    if (!b || !videoB?.muxPlaybackId) return
+    attachHls(b, getMuxHlsUrl(videoB.muxPlaybackId), () => setLoadingB(false))
+    return () => {
+      const h = (b as HTMLVideoElement & { _hls?: Hls })._hls
+      if (h) { h.destroy(); delete (b as HTMLVideoElement & { _hls?: Hls })._hls }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoB?.muxPlaybackId])
+
   useEffect(() => {
     if (!loadingA && !loadingB) setIsLoaded(true)
   }, [loadingA, loadingB])
@@ -344,14 +382,12 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
       {/* ── Video A ── */}
       <video
         ref={videoARef}
-        src={getMuxHlsUrl(videoA.muxPlaybackId!)}
         style={getVideoAStyle()}
         playsInline
         muted={ec.muted}
         loop={ec.loop}
         autoPlay={ec.autoplay}
         preload="auto"
-        onCanPlay={() => setLoadingA(false)}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         poster={getMuxThumbUrl(videoA.muxPlaybackId!)}
@@ -360,14 +396,12 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
       {/* ── Video B ── */}
       <video
         ref={videoBRef}
-        src={getMuxHlsUrl(videoB!.muxPlaybackId!)}
         style={getVideoBStyle()}
         playsInline
         muted
         loop={ec.loop}
         autoPlay={ec.autoplay}
         preload="auto"
-        onCanPlay={() => setLoadingB(false)}
         poster={getMuxThumbUrl(videoB!.muxPlaybackId!)}
       />
 
