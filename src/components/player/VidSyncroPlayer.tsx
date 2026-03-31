@@ -459,6 +459,23 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
         </div>
       )}
 
+      {/* ── Reality A badge (when labelA is set and we're on A) ── */}
+      {!showingB && oc.labelA && (
+        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 20, pointerEvents: 'none' }}>
+          <div
+            className="font-medium"
+            style={{
+              padding: '3px 10px', borderRadius: 99,
+              background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.8)',
+              fontSize: 11,
+            }}
+          >
+            {oc.labelA}
+          </div>
+        </div>
+      )}
+
       {/* ── Reality B badge ── */}
       {showingB && (
         <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 20, pointerEvents: 'none' }}>
@@ -471,7 +488,7 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
               fontSize: 11,
             }}
           >
-            Reality B
+            {oc.labelB || 'Reality B'}
           </div>
         </div>
       )}

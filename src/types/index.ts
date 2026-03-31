@@ -28,6 +28,8 @@ export interface OverlayConfig {
   brandingUrl: string
   autoSwitchEnabled: boolean
   autoSwitchInterval: number
+  labelA?: string
+  labelB?: string
 }
 
 export interface EmbedConfig {
@@ -135,6 +137,8 @@ export const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   brandingUrl: 'https://vidsyncro.com',
   autoSwitchEnabled: false,
   autoSwitchInterval: 5000,
+  labelA: '',
+  labelB: '',
 }
 
 export const DEFAULT_EMBED_CONFIG: EmbedConfig = {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import VidSyncroPlayer from '@/components/player/VidSyncroPlayer'
+import { UploadZone } from '@/components/dashboard/UploadZone'
 import type { Project, OverlayConfig, EmbedConfig } from '@/types'
 
 const TABS = ['Videos', 'Overlay', 'Embed', 'Analytics'] as const
@@ -180,35 +181,106 @@ export default function EditorPage() {
               <div className="space-y-4">
                 {(['A', 'B'] as const).map(slot => {
                   const asset = slot === 'A' ? project.videoA : project.videoB
+                  const [replacing, setReplacing] = useState(false)
                   return (
                     <div key={slot} className="rounded-xl bg-zinc-800/50 border border-white/5 overflow-hidden">
                       <div className="px-3 py-2 border-b border-white/5 flex items-center justify-between">
                         <span className="text-sm font-medium text-zinc-300">Reality {slot}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          asset?.status === 'ready' ? 'bg-green-500/10 text-green-400' :
-                          asset?.status === 'preparing' ? 'bg-yellow-500/10 text-yellow-400' :
-                          asset?.status === 'errored' ? 'bg-red-500/10 text-red-400' :
-                          'bg-zinc-600/30 text-zinc-500'
-                        }`}>
-                          {asset?.status || 'No video'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            asset?.status === 'ready' ? 'bg-green-500/10 text-green-400' :
+                            asset?.status === 'preparing' ? 'bg-yellow-500/10 text-yellow-400' :
+                            asset?.status === 'errored' ? 'bg-red-500/10 text-red-400' :
+                            'bg-zinc-600/30 text-zinc-500'
+                          }`}>
+                            {asset?.status || 'No video'}
+                          </span>
+                          {asset && !replacing && (
+                            <button
+                              onClick={() => setReplacing(true)}
+                              className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                            >
+                              Replace
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      {asset?.thumbnailUrl ? (
-                        <img src={asset.thumbnailUrl} alt={`Reality ${slot} thumbnail`} className="w-full aspect-video object-cover" />
+                      {replacing ? (
+                        <div className="p-3">
+                          <UploadZone
+                            label={`New Reality ${slot} video`}
+                            projectId={project.id}
+                            videoSlot={slot.toLowerCase() as 'a' | 'b'}
+                            onUploadComplete={(assetId, playbackId) => {
+                              setProject(p => {
+                                if (!p) return p
+                                const newAsset = {
+                                  id: assetId,
+                                  muxAssetId: null,
+                                  muxPlaybackId: playbackId,
+                                  muxUploadId: assetId,
+                                  status: 'ready' as const,
+                                  duration: null,
+                                  aspectRatio: null,
+                                  thumbnailUrl: null,
+                                }
+                                return slot === 'A'
+                                  ? { ...p, videoA: newAsset }
+                                  : { ...p, videoB: newAsset }
+                              })
+                              setReplacing(false)
+                            }}
+                            onUploadError={(err) => { alert(err); setReplacing(false) }}
+                          />
+                          <button
+                            onClick={() => setReplacing(false)}
+                            className="mt-2 w-full text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       ) : (
-                        <div className="aspect-video bg-zinc-900 flex items-center justify-center">
-                          <span className="text-zinc-600 text-xs">No video uploaded</span>
-                        </div>
-                      )}
-                      {asset?.duration && (
-                        <div className="px-3 py-2 text-xs text-zinc-500">
-                          Duration: {Math.floor(asset.duration / 60)}:{String(asset.duration % 60).padStart(2, '0')}
-                        </div>
+                        <>
+                          {asset?.thumbnailUrl ? (
+                            <img src={asset.thumbnailUrl} alt={`Reality ${slot} thumbnail`} className="w-full aspect-video object-cover" />
+                          ) : (
+                            <div className="p-3">
+                              <UploadZone
+                                label={`Upload Reality ${slot} video`}
+                                projectId={project.id}
+                                videoSlot={slot.toLowerCase() as 'a' | 'b'}
+                                onUploadComplete={(assetId, playbackId) => {
+                                  setProject(p => {
+                                    if (!p) return p
+                                    const newAsset = {
+                                      id: assetId,
+                                      muxAssetId: null,
+                                      muxPlaybackId: playbackId,
+                                      muxUploadId: assetId,
+                                      status: 'ready' as const,
+                                      duration: null,
+                                      aspectRatio: null,
+                                      thumbnailUrl: null,
+                                    }
+                                    return slot === 'A'
+                                      ? { ...p, videoA: newAsset }
+                                      : { ...p, videoB: newAsset }
+                                  })
+                                }}
+                                onUploadError={(err) => alert(err)}
+                              />
+                            </div>
+                          )}
+                          {asset?.duration && (
+                            <div className="px-3 py-2 text-xs text-zinc-500">
+                              Duration: {Math.floor(asset.duration / 60)}:{String(asset.duration % 60).padStart(2, '0')}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )
                 })}
-                <p className="text-xs text-zinc-600 text-center">Replace videos from the New Project wizard or re-upload from your dashboard.</p>
               </div>
             )}
 
@@ -242,24 +314,52 @@ export default function EditorPage() {
                     className="w-full accent-violet-500"
                   />
                 </div>
-                <Toggle checked={project.overlayConfig.showHint} onChange={v => updateOverlay({ showHint: v })} label="Show Hint" />
-                {project.overlayConfig.showHint && (
-                  <>
-                    <div>
-                      <Label>Hint Text</Label>
-                      <Input value={project.overlayConfig.hintText} onChange={e => updateOverlay({ hintText: e.target.value })} />
-                    </div>
-                    <div>
-                      <Label>Hint Position</Label>
-                      <Select value={project.overlayConfig.hintPosition} onChange={e => updateOverlay({ hintPosition: e.target.value as OverlayConfig['hintPosition'] })}>
-                        <option value="bottom-center">Bottom Center</option>
-                        <option value="bottom-left">Bottom Left</option>
-                        <option value="bottom-right">Bottom Right</option>
-                        <option value="top-center">Top Center</option>
-                      </Select>
-                    </div>
-                  </>
-                )}
+                {/* ── Hint / Prompt text ── */}
+                <div className="rounded-xl bg-zinc-900/60 border border-white/5 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-zinc-300 uppercase tracking-widest">Hint Badge</span>
+                    <Toggle checked={project.overlayConfig.showHint} onChange={v => updateOverlay({ showHint: v })} label="" />
+                  </div>
+                  <div>
+                    <Label>Prompt text (shown on Reality A)</Label>
+                    <Input
+                      value={project.overlayConfig.hintText}
+                      placeholder={project.overlayConfig.switchMode === 'hold' ? 'Hold to reveal' : project.overlayConfig.switchMode === 'toggle' ? 'Tap to switch' : 'Hover to reveal'}
+                      onChange={e => updateOverlay({ hintText: e.target.value })}
+                    />
+                    <p className="text-xs text-zinc-600 mt-1">Leave blank to use the default for the selected interaction mode.</p>
+                  </div>
+                  <div>
+                    <Label>Position</Label>
+                    <Select value={project.overlayConfig.hintPosition} onChange={e => updateOverlay({ hintPosition: e.target.value as OverlayConfig['hintPosition'] })}>
+                      <option value="bottom-center">Bottom Center</option>
+                      <option value="bottom-left">Bottom Left</option>
+                      <option value="bottom-right">Bottom Right</option>
+                      <option value="top-center">Top Center</option>
+                    </Select>
+                  </div>
+                </div>
+                {/* ── Reality labels ── */}
+                <div className="rounded-xl bg-zinc-900/60 border border-white/5 p-3 space-y-3">
+                  <span className="text-xs font-semibold text-zinc-300 uppercase tracking-widest">Reality Labels</span>
+                  <div>
+                    <Label>Reality A label (default view)</Label>
+                    <Input
+                      value={project.overlayConfig.labelA || ''}
+                      placeholder="e.g. Before"
+                      onChange={e => updateOverlay({ labelA: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>Reality B label (revealed view)</Label>
+                    <Input
+                      value={project.overlayConfig.labelB || ''}
+                      placeholder="e.g. After"
+                      onChange={e => updateOverlay({ labelB: e.target.value })}
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-600">Leave blank to hide the label badge entirely.</p>
+                </div>
                 <Toggle checked={project.overlayConfig.showSwitchIndicator} onChange={v => updateOverlay({ showSwitchIndicator: v })} label="Switch Indicator" />
                 {project.overlayConfig.showSwitchIndicator && (
                   <div>

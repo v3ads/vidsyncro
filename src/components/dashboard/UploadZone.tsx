@@ -48,6 +48,7 @@ export function UploadZone({ label, uploadedId, projectId, videoSlot, onComplete
         xhr.onload = () => (xhr.status === 200 ? resolve() : reject(new Error(`Upload failed: ${xhr.status}`)))
         xhr.onerror = () => reject(new Error("Upload failed"))
         xhr.open("PUT", uploadUrl)
+        xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
         xhr.send(file)
       })
       setStatus("Processing...")
