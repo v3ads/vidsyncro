@@ -97,14 +97,46 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
+    // Sync timestamp
     const diff = Math.abs(a.currentTime - b.currentTime)
     if (diff > 0.5) b.currentTime = a.currentTime
+    // Sync play/pause state: if one is paused the other should be too
+    if (a.paused !== b.paused) {
+      if (a.paused) { b.pause(); setIsPlaying(false) }
+      else { b.play().catch(() => {}); setIsPlaying(true) }
+    }
   }, [])
 
   useEffect(() => {
     syncIntervalRef.current = setInterval(syncVideos, 500)
     return () => { if (syncIntervalRef.current) clearInterval(syncIntervalRef.current) }
   }, [syncVideos])
+
+  // ── Play/pause mirror via native events ──────────────────────────────────────
+  // Ensures that if either video is paused/played by any means (autoplay policy,
+  // buffering stall, native controls, etc.) the other video mirrors it immediately.
+  useEffect(() => {
+    const a = videoARef.current
+    const b = videoBRef.current
+    if (!a || !b) return
+
+    const onAPause = () => { if (!b.paused) { b.pause(); setIsPlaying(false) } }
+    const onAPlay  = () => { if (b.paused)  { b.play().catch(() => {}); setIsPlaying(true) } }
+    const onBPause = () => { if (!a.paused) { a.pause(); setIsPlaying(false) } }
+    const onBPlay  = () => { if (a.paused)  { a.play().catch(() => {}); setIsPlaying(true) } }
+
+    a.addEventListener('pause', onAPause)
+    a.addEventListener('play',  onAPlay)
+    b.addEventListener('pause', onBPause)
+    b.addEventListener('play',  onBPlay)
+
+    return () => {
+      a.removeEventListener('pause', onAPause)
+      a.removeEventListener('play',  onAPlay)
+      b.removeEventListener('pause', onBPause)
+      b.removeEventListener('play',  onBPlay)
+    }
+  }, [isLoaded]) // re-attach after both videos are loaded
 
   // ── Auto-switch ──────────────────────────────────────────────────────────────
   useEffect(() => {
