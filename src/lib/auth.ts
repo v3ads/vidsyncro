@@ -1,5 +1,6 @@
 import { NextAuthOptions, getServerSession as _getServerSession } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
+import { sendEmail, emailTemplates } from './brevo'
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vipaymanshalaby@gmail.com'
 
@@ -12,6 +13,18 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: 'jwt',
+  },
+  events: {
+    async signIn({ user, isNewUser }) {
+      if (isNewUser && user.email) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://vidsyncro.com'
+        const tmpl = emailTemplates.welcome(user.name || '', `${appUrl}/dashboard`)
+        await sendEmail({
+          to: { email: user.email, name: user.name || undefined },
+          ...tmpl,
+        }).catch((err) => console.error('Welcome email failed:', err))
+      }
+    },
   },
   callbacks: {
     async signIn({ user }) {
