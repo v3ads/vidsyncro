@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/auth'
 import { createUploadUrl } from '@/lib/mux'
 import { supabaseAdmin } from '@/lib/supabase'
+import muxClient from '@/lib/mux'
+
+// GET /api/videos/mux-upload?assetId=<uploadId>
+// Polls Mux upload status and returns playbackId once ready
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const uploadId = searchParams.get('assetId')
+  if (!uploadId) return NextResponse.json({ error: 'assetId required' }, { status: 400 })
+
+  try {
+    // Retrieve the upload to find the linked asset ID
+    const upload = await muxClient.video.uploads.retrieve(uploadId)
+    if (upload.status === 'errored') {
+      return NextResponse.json({ status: 'errored' })
+    }
+    if (!upload.asset_id) {
+      // Asset not yet created — still uploading or waiting
+      return NextResponse.json({ status: 'preparing' })
+    }
+    // Retrieve the asset
+    const asset = await muxClient.video.assets.retrieve(upload.asset_id)
+    if (asset.status === 'ready') {
+      const playbackId = asset.playback_ids?.find(p => p.policy === 'public')?.id
+      if (playbackId) {
+        return NextResponse.json({
+          status: 'ready',
+          playbackId,
+          assetId: asset.id,
+          duration: asset.duration ? Math.round(asset.duration) : null,
+          aspectRatio: asset.aspect_ratio || null,
+          thumbnailUrl: `https://image.mux.com/${playbackId}/thumbnail.jpg`,
+        })
+      }
+    }
+    return NextResponse.json({ status: asset.status || 'preparing' })
+  } catch (err) {
+    console.error('Mux status check error:', err)
+    return NextResponse.json({ status: 'preparing' })
+  }
+}
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession()

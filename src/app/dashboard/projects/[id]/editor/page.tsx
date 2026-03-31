@@ -55,7 +55,8 @@ export default function EditorPage() {
   const [replacingA, setReplacingA] = useState(false)
   const [replacingB, setReplacingB] = useState(false)
 
-  const embedUrl = project ? `${process.env.NEXT_PUBLIC_EMBED_URL || 'https://embed.vidsyncro.com'}/${project.slug}` : ''
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.vidsyncro.com'
+  const embedUrl = project ? `${appUrl}/${project.slug}` : ''
   const iframeCode = project
     ? `<iframe src="${embedUrl}" width="100%" style="aspect-ratio:16/9;border:none;" allowfullscreen></iframe>`
     : ''
@@ -477,11 +478,25 @@ export default function EditorPage() {
         </div>
 
         {/* Right: live preview */}
-        <div className="flex-1 bg-zinc-950 flex flex-col items-center justify-center p-8 overflow-auto">
-          <div className="w-full max-w-3xl">
-            <div className="text-xs text-zinc-600 text-center mb-3 uppercase tracking-widest">Live Preview</div>
-            <VidSyncroPlayer project={project} preview />
-          </div>
+        <div className="flex-1 bg-zinc-950 flex flex-col items-center justify-center p-4 overflow-auto">
+          <div className="text-xs text-zinc-600 text-center mb-3 uppercase tracking-widest">Live Preview</div>
+          {(() => {
+            const raw = project.videoA?.aspectRatio || project.videoB?.aspectRatio || '16:9'
+            const [w, h] = raw.split(':').map(Number)
+            const ar = (w && h) ? w / h : 16 / 9
+            // Portrait (9:16) → constrain by height; landscape → constrain by width
+            const isPortrait = ar < 1
+            return (
+              <div
+                style={isPortrait
+                  ? { height: 'min(70vh, 560px)', aspectRatio: String(ar), position: 'relative' }
+                  : { width: '100%', maxWidth: 720, aspectRatio: String(ar), position: 'relative' }
+                }
+              >
+                <VidSyncroPlayer project={project} preview />
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>

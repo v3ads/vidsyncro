@@ -15,7 +15,25 @@ export default function AnalyticsPage() {
   useEffect(() => {
     fetch('/api/projects')
       .then((r) => r.json())
-      .then((data) => setProjects(Array.isArray(data) ? data : []))
+      .then((raw) => {
+        const mapped = (Array.isArray(raw) ? raw : []).map((d: Record<string, unknown>) => ({
+          id: d.id,
+          userId: d.user_id,
+          title: d.title,
+          slug: d.slug,
+          description: d.description ?? null,
+          videoA: d.video_a ?? null,
+          videoB: d.video_b ?? null,
+          overlayConfig: d.overlay_config,
+          embedConfig: d.embed_config,
+          status: d.status,
+          totalViews: d.total_views ?? 0,
+          totalInteractions: d.total_interactions ?? 0,
+          createdAt: d.created_at as string,
+          updatedAt: d.updated_at as string,
+        }))
+        setProjects(mapped as unknown as Project[])
+      })
       .catch(() => setProjects([]))
       .finally(() => setLoading(false))
   }, [])

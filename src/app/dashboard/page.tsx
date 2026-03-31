@@ -33,8 +33,25 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/projects')
       if (res.ok) {
-        const data = await res.json()
-        setProjects(data)
+        const raw = await res.json()
+        // Map snake_case DB fields to camelCase Project type
+        const mapped = (Array.isArray(raw) ? raw : []).map((d: Record<string, unknown>) => ({
+          id: d.id,
+          userId: d.user_id,
+          title: d.title,
+          slug: d.slug,
+          description: d.description ?? null,
+          videoA: d.video_a ?? null,
+          videoB: d.video_b ?? null,
+          overlayConfig: d.overlay_config,
+          embedConfig: d.embed_config,
+          status: d.status,
+          totalViews: d.total_views ?? 0,
+          totalInteractions: d.total_interactions ?? 0,
+          createdAt: d.created_at as string,
+          updatedAt: d.updated_at as string,
+        }))
+        setProjects(mapped as unknown as Project[])
       }
     } catch (err) {
       console.error('Failed to fetch projects:', err)
