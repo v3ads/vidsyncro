@@ -52,6 +52,8 @@ export default function EditorPage() {
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>('Videos')
   const [analytics, setAnalytics] = useState<{ views: number; holds: number; holdRate: number; avgHoldDuration: number; chart: Array<{ date: string; views: number }> } | null>(null)
+  const [replacingA, setReplacingA] = useState(false)
+  const [replacingB, setReplacingB] = useState(false)
 
   const embedUrl = project ? `${process.env.NEXT_PUBLIC_EMBED_URL || 'https://embed.vidsyncro.com'}/${project.slug}` : ''
   const iframeCode = project
@@ -181,7 +183,8 @@ export default function EditorPage() {
               <div className="space-y-4">
                 {(['A', 'B'] as const).map(slot => {
                   const asset = slot === 'A' ? project.videoA : project.videoB
-                  const [replacing, setReplacing] = useState(false)
+                  const replacing = slot === 'A' ? replacingA : replacingB
+                  const setReplacing = slot === 'A' ? setReplacingA : setReplacingB
                   return (
                     <div key={slot} className="rounded-xl bg-zinc-800/50 border border-white/5 overflow-hidden">
                       <div className="px-3 py-2 border-b border-white/5 flex items-center justify-between">
