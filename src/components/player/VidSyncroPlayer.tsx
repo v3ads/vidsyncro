@@ -221,40 +221,6 @@ export default function VidSyncroPlayer({
     }
   }, [ec.muted, trackEvent])
 
-  // ── External pause/play mirror ──────────────────────────────────────────────
-  // Handles cases where one video is paused/played by an external source:
-  // browser autoplay block, native video controls, or a buffering stall.
-  // Safe from feedback loops because:
-  //   - We only mirror pause→pause (not pause→play)
-  //   - We only mirror play→play (not play→pause)
-  //   - Both videos are always in the same state after mirroring, so the
-  //     mirrored call fires no new events that differ from the current state
-  useEffect(() => {
-    const a = videoARef.current
-    const b = videoBRef.current
-    if (!a || !b) return
-
-    // If A is paused externally, pause B too
-    const onAPause = () => { if (!b.paused) { b.pause(); setIsPlaying(false) } }
-    // If A resumes (e.g. user taps play on native controls), play B too
-    const onAPlay  = () => { if (b.paused)  { b.play().catch(() => {}); setIsPlaying(true) } }
-    // If B is paused externally (stall etc.), pause A too
-    const onBPause = () => { if (!a.paused) { a.pause(); setIsPlaying(false) } }
-    // If B resumes, play A too
-    const onBPlay  = () => { if (a.paused)  { a.play().catch(() => {}); setIsPlaying(true) } }
-
-    a.addEventListener('pause', onAPause)
-    a.addEventListener('play',  onAPlay)
-    b.addEventListener('pause', onBPause)
-    b.addEventListener('play',  onBPlay)
-    return () => {
-      a.removeEventListener('pause', onAPause)
-      a.removeEventListener('play',  onAPlay)
-      b.removeEventListener('pause', onBPause)
-      b.removeEventListener('play',  onBPlay)
-    }
-  }, [isLoaded])
-
   // ── Auto-switch ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!oc.autoSwitchEnabled || !isPlaying) return
