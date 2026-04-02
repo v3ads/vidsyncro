@@ -3,14 +3,128 @@
 import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 40 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: 'easeOut' } },
 }
+const stagger = { visible: { transition: { staggerChildren: 0.12 } } }
 
-const stagger = {
-  visible: { transition: { staggerChildren: 0.12 } },
+function BeforeAfterSlider() {
+  const [sliderPos, setSliderPos] = useState(50)
+  const [isDragging, setIsDragging] = useState(false)
+  const containerRef = useRef(null)
+
+  const getPos = useCallback((clientX) => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return 50
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width))
+    return (x / rect.width) * 100
+  }, [])
+
+  const onMouseDown = useCallback((e) => {
+    e.preventDefault()
+    setIsDragging(true)
+    setSliderPos(getPos(e.clientX))
+  }, [getPos])
+
+  const onMouseMove = useCallback((e) => {
+    if (!isDragging) return
+    setSliderPos(getPos(e.clientX))
+  }, [isDragging, getPos])
+
+  const onMouseUp = useCallback(() => setIsDragging(false), [])
+
+  const onTouchStart = useCallback((e) => {
+    setIsDragging(true)
+    setSliderPos(getPos(e.touches[0].clientX))
+  }, [getPos])
+
+  const onTouchMove = useCallback((e) => {
+    if (!isDragging) return
+    e.preventDefault()
+    setSliderPos(getPos(e.touches[0].clientX))
+  }, [isDragging, getPos])
+
+  const onTouchEnd = useCallback(() => setIsDragging(false), [])
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', onMouseMove)
+      window.addEventListener('mouseup', onMouseUp)
+      return () => {
+        window.removeEventListener('mousemove', onMouseMove)
+        window.removeEventListener('mouseup', onMouseUp)
+      }
+    }
+  }, [isDragging, onMouseMove, onMouseUp])
+
+  return (
+    <div className="w-full max-w-3xl mx-auto px-4">
+      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+        <div className="bg-white/5 px-4 py-3 flex items-center gap-3 border-b border-white/10">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-500/60" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+            <div className="w-3 h-3 rounded-full bg-green-500/60" />
+          </div>
+          <span className="text-gray-500 text-xs font-mono">embed.vidsyncro.com/your-project</span>
+        </div>
+        <div
+          ref={containerRef}
+          className="relative w-full overflow-hidden select-none"
+          style={{ aspectRatio: '16/9', cursor: isDragging ? 'grabbing' : 'grab' }}
+          onMouseDown={onMouseDown}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <img
+            src="/day.jpg"
+            alt="Reality B - Day"
+            className="absolute inset-0 w-full h-full object-cover"
+            draggable={false}
+          />
+          <div
+            className="absolute inset-0 overflow-hidden"
+            style={{ width: sliderPos + '%' }}
+          >
+            <img
+              src="/night.jpg"
+              alt="Reality A - Night"
+              className="absolute inset-0 h-full object-cover"
+              style={{ width: containerRef.current?.offsetWidth + 'px' || '100%' }}
+              draggable={false}
+            />
+          </div>
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg"
+            style={{ left: sliderPos + '%', transform: 'translateX(-50%)' }}
+          >
+            <div
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white shadow-xl flex items-center justify-center"
+              style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M7 5L3 10L7 15" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M13 5L17 10L13 15" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium pointer-events-none">
+            Reality A
+          </div>
+          <div className="absolute top-3 right-3 bg-purple-600/80 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium pointer-events-none">
+            Reality B
+          </div>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm border border-white/20 rounded-full px-4 py-1.5 text-xs text-gray-200 pointer-events-none">
+            Drag to reveal
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function LandingPage() {
@@ -20,7 +134,7 @@ export default function LandingPage() {
     { icon: '⚡', title: 'Instant Hold Switch', desc: 'Hold to peek into reality B. Release to snap back. The most intuitive dual-video UX ever built.' },
     { icon: '🎬', title: 'Mux-Powered Streaming', desc: 'Enterprise-grade video delivery via Mux. HLS adaptive bitrate, global CDN, sub-second latency.' },
     { icon: '🔄', title: 'Perfect Sync Engine', desc: 'Passive sync every 500ms ensures both videos stay frame-perfect. Switch at any moment.' },
-    { icon: '🎨', title: '5 Transition Types', desc: 'Crossfade, slide, blur-reveal, zoom — craft the exact reveal experience your audience deserves.' },
+    { icon: '🎨', title: '5 Transition Types', desc: 'Crossfade, slide, blur-reveal, zoom. Craft the exact reveal experience your audience deserves.' },
     { icon: '📊', title: 'Deep Analytics', desc: 'Track holds, durations, interactions, and viewer behavior. Know exactly what resonates.' },
     { icon: '🔒', title: 'Enterprise Security', desc: 'Domain whitelisting, password protection, embed restrictions. Your IP, locked down tight.' },
   ]
@@ -30,7 +144,7 @@ export default function LandingPage() {
 
       {/* NAV */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#0a0a0a]/80 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">VS</div>
             <span className="font-bold text-white">VidSyncro</span>
@@ -55,7 +169,7 @@ export default function LandingPage() {
       </nav>
 
       {/* HERO */}
-      <section className="relative pt-32 pb-20 px-6">
+      <section className="relative pt-28 pb-12 px-4 sm:px-6">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl" />
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-violet-600/15 rounded-full blur-3xl" />
@@ -63,26 +177,26 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto text-center relative">
           <motion.div initial="hidden" animate="visible" variants={stagger}>
             <motion.div variants={fadeUp}>
-              <span className="inline-flex items-center gap-2 bg-purple-600/10 border border-purple-500/20 rounded-full px-4 py-1.5 text-purple-300 text-sm mb-8">
+              <span className="inline-flex items-center gap-2 bg-purple-600/10 border border-purple-500/20 rounded-full px-4 py-1.5 text-purple-300 text-sm mb-6">
                 Private Platform
               </span>
             </motion.div>
-            <motion.h1 variants={fadeUp} className="text-5xl md:text-7xl font-black leading-none mb-6 tracking-tight">
+            <motion.h1 variants={fadeUp} className="text-4xl sm:text-6xl md:text-7xl font-black leading-none mb-4 tracking-tight">
               Two Realities.{' '}
               <span className="bg-gradient-to-r from-purple-400 to-violet-300 bg-clip-text text-transparent">
                 One Hold.
               </span>
             </motion.h1>
-            <motion.p variants={fadeUp} className="text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+            <motion.p variants={fadeUp} className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto mb-8 leading-relaxed">
               The enterprise dual-video platform. Drop two synchronized videos into one embed. Hold to reveal. Release to return.
             </motion.p>
-            <motion.div variants={fadeUp}>
-              <div className="bg-white/5 border border-white/10 rounded-2xl px-8 py-6 text-center inline-block">
+            <motion.div variants={fadeUp} className="inline-flex flex-col items-center gap-3 mb-10">
+              <div className="bg-white/5 border border-white/10 rounded-2xl px-6 sm:px-8 py-5 text-center">
                 <p className="text-gray-300 text-lg mb-1">Want a project created?</p>
-                <p className="text-gray-500 text-sm mb-5">VidSyncro is a private platform. Projects are created on request.</p>
+                <p className="text-gray-500 text-sm mb-4">VidSyncro is a private platform. Projects are created on request.</p>
                 <a
                   href="mailto:info@vidsyncro.com"
-                  className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold px-8 py-3 rounded-xl transition-colors text-lg"
+                  className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold px-6 sm:px-8 py-3 rounded-xl transition-colors text-base sm:text-lg"
                 >
                   Contact info@vidsyncro.com
                 </a>
@@ -92,40 +206,25 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* MOCKUP */}
-      <section className="px-6 pb-24">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-            <div className="bg-white/5 px-4 py-3 flex items-center gap-3 border-b border-white/10">
-              <div className="flex gap-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-500/60" />
-                <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
-                <div className="w-3 h-3 rounded-full bg-green-500/60" />
-              </div>
-              <span className="text-gray-500 text-xs font-mono">embed.vidsyncro.com/your-project</span>
-            </div>
-            <div className="relative aspect-video bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-900/40 to-violet-900/20" />
-              <div className="relative text-center">
-                <div className="text-4xl mb-3">&#9654;</div>
-                <p className="text-gray-400 text-sm">Hold to reveal Reality B</p>
-              </div>
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm border border-white/10 rounded-full px-4 py-1.5 text-xs text-gray-300">
-                Hold to reveal
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* INTERACTIVE SLIDER */}
+      <section className="pb-20">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6, duration: 0.7 }}
+        >
+          <BeforeAfterSlider />
+        </motion.div>
       </section>
 
       {/* FEATURES */}
-      <section className="px-6 pb-24">
+      <section className="px-4 sm:px-6 pb-24">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-14">
             <p className="text-purple-400 text-sm font-medium uppercase tracking-widest mb-3">Features</p>
-            <h2 className="text-4xl font-black">Everything you need to captivate</h2>
+            <h2 className="text-3xl sm:text-4xl font-black">Everything you need to captivate</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {features.map((feature, i) => (
               <motion.div
                 key={i}
@@ -145,14 +244,14 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="px-6 pb-24">
+      <section className="px-4 sm:px-6 pb-24">
         <div className="max-w-2xl mx-auto text-center">
-          <div className="bg-gradient-to-br from-purple-900/40 to-violet-900/20 border border-purple-500/20 rounded-3xl p-12">
-            <h2 className="text-4xl font-black mb-4">Ready to show both realities?</h2>
+          <div className="bg-gradient-to-br from-purple-900/40 to-violet-900/20 border border-purple-500/20 rounded-3xl p-8 sm:p-12">
+            <h2 className="text-3xl sm:text-4xl font-black mb-4">Ready to show both realities?</h2>
             <p className="text-gray-400 mb-8">VidSyncro projects are created on request. Reach out and we will set you up.</p>
             <a
               href="mailto:info@vidsyncro.com"
-              className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold px-10 py-4 rounded-xl transition-colors text-lg"
+              className="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold px-8 sm:px-10 py-4 rounded-xl transition-colors text-lg"
             >
               Contact info@vidsyncro.com
             </a>
@@ -161,8 +260,8 @@ export default function LandingPage() {
       </section>
 
       {/* FOOTER */}
-      <footer className="border-t border-white/5 px-6 py-8">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <footer className="border-t border-white/5 px-4 sm:px-6 py-8">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-6 h-6 bg-purple-600 rounded flex items-center justify-center text-white font-bold text-xs">VS</div>
             <span className="text-gray-500 text-sm">VidSyncro — Private Platform</span>
@@ -173,4 +272,4 @@ export default function LandingPage() {
 
     </div>
   )
-      }
+}
