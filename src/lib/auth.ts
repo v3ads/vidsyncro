@@ -21,8 +21,11 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async signIn({ user }) {
+      // Return false for denied users — NextAuth will redirect to the error page.
+      // Do NOT return a redirect string here — it breaks JWT session creation
+      // for allowed users in API routes that call getServerSession().
       if (!user.email || !ALLOWED_EMAILS.includes(user.email)) {
-        return '/auth/signin?error=AccessDenied'
+        return false
       }
       return true
     },
