@@ -30,7 +30,7 @@ export default function SignInContent() {
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <Link href="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-8 transition-colors text-sm">
-          ← Back to home
+          Back to home
         </Link>
 
         <motion.div
@@ -45,20 +45,22 @@ export default function SignInContent() {
           <h1 className="text-2xl font-bold text-white mb-2">Welcome to VidSyncro</h1>
 
           {error === 'AccessDenied' ? (
-            <>
-              <p className="text-red-400 mb-6 text-sm">
-                Your Google account is not authorized to access VidSyncro.<br />
-                Please contact <a href="mailto:info@vidsyncro.com" className="underline hover:text-white">info@vidsyncro.com</a> to request access.
+            <div>
+              <p className="text-red-400 mb-2 text-sm">
+                Your Google account is not authorized to access VidSyncro.
+              </p>
+              <p className="text-gray-400 mb-6 text-sm">
+                Contact <a href="mailto:info@vidsyncro.com" className="underline hover:text-white">info@vidsyncro.com</a> to request access.
               </p>
               <button
                 onClick={handleGoogleSignIn}
-                className="w-full bg-white text-gray-900 font-semibold py-3 px-4 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center gap-3"
+                className="w-full bg-white text-gray-900 font-semibold py-3 px-4 rounded-xl hover:bg-gray-100 transition-colors"
               >
                 Try a different account
               </button>
-            </>
+            </div>
           ) : (
-            <>
+            <div>
               <p className="text-gray-400 mb-8 text-sm">Sign in with your authorized Google account</p>
               <button
                 onClick={handleGoogleSignIn}
@@ -82,7 +84,7 @@ export default function SignInContent() {
                 <a href="mailto:info@vidsyncro.com" className="text-purple-400 hover:text-purple-300">info@vidsyncro.com</a>{" "}
                 to request access.
               </p>
-            </>
+            </div>
           )}
         </motion.div>
       </div>
