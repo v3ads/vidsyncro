@@ -1,9 +1,8 @@
 import { NextAuthOptions, getServerSession as _getServerSession } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 
-// ── ALLOWED USERS ─────────────────────────────────────────────────────────────
-// Add any Gmail address here to grant them full access.
-// All allowed users get 'admin' plan (unlimited everything).
+// Add Gmail addresses here to grant full access.
+// All allowed users automatically get admin plan (unlimited everything).
 const ALLOWED_EMAILS: string[] = [
   'vipaymanshalaby@gmail.com',
   // 'client@gmail.com',
@@ -22,7 +21,6 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async signIn({ user }) {
-      // Block anyone not on the allowlist
       if (!user.email || !ALLOWED_EMAILS.includes(user.email)) {
         return '/auth/signin?error=AccessDenied'
       }
@@ -34,7 +32,6 @@ export const authOptions: NextAuthOptions = {
         token.email = user.email
         token.name = user.name
         token.picture = user.image
-        // All allowed users get admin plan
         token.plan = 'admin'
       }
       return token
@@ -61,7 +58,6 @@ export function getServerSession() {
   return _getServerSession(authOptions)
 }
 
-// Extend next-auth types
 declare module 'next-auth' {
   interface Session {
     user: {
