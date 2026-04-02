@@ -4,24 +4,15 @@ import { createUploadUrl } from '@/lib/mux'
 import { supabaseAdmin } from '@/lib/supabase'
 import muxClient from '@/lib/mux'
 
-// GET /api/videos/mux-upload?assetId=<uploadId>
-// Polls Mux upload status and returns playbackId once ready
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const uploadId = searchParams.get('assetId')
   if (!uploadId) return NextResponse.json({ error: 'assetId required' }, { status: 400 })
 
   try {
-    // Retrieve the upload to find the linked asset ID
     const upload = await muxClient.video.uploads.retrieve(uploadId)
-    if (upload.status === 'errored') {
-      return NextResponse.json({ status: 'errored' })
-    }
-    if (!upload.asset_id) {
-      // Asset not yet created — still uploading or waiting
-      return NextResponse.json({ status: 'preparing' })
-    }
-    // Retrieve the asset
+    if (upload.status === 'errored') return NextResponse.json({ status: 'errored' })
+    if (!upload.asset_id) return NextResponse.json({ status: 'preparing' })
     const asset = await muxClient.video.assets.retrieve(upload.asset_id)
     if (asset.status === 'ready') {
       const playbackId = asset.playback_ids?.find(p => p.policy === 'public')?.id
@@ -52,7 +43,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'projectId and videoSlot (a|b) required' }, { status: 400 })
   }
 
-  // Verify project ownership
   const { data: project } = await supabaseAdmin
     .from('projects')
     .select('user_id')
@@ -66,7 +56,6 @@ export async function POST(req: NextRequest) {
   try {
     const { uploadUrl, uploadId } = await createUploadUrl(projectId, videoSlot as 'a' | 'b')
 
-    // Pre-create the video asset record with pending status
     const videoAsset = {
       id: uploadId,
       muxAssetId: null,
@@ -78,7 +67,6 @@ export async function POST(req: NextRequest) {
       thumbnailUrl: null,
     }
 
-    // Store in project
     const field = videoSlot === 'a' ? 'video_a' : 'video_b'
     await supabaseAdmin
       .from('projects')
@@ -86,8 +74,10 @@ export async function POST(req: NextRequest) {
       .eq('id', projectId)
 
     return NextResponse.json({ uploadUrl, uploadId })
-  } catch (err) {
+  } catch (err: any) {
     console.error('Mux upload error:', err)
-    return NextResponse.json({ error: 'Failed to create upload URL' }, { status: 500 })
+    // Expose real error for debugging
+    const message = err?.message || err?.error?.message || JSON.stringify(err)
+    return NextResponse.json({ error: 'Failed to create upload URL', detail: message }, { status: 500 })
   }
 }
