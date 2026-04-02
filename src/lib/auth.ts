@@ -1,8 +1,14 @@
 import { NextAuthOptions, getServerSession as _getServerSession } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
-import { sendEmail, emailTemplates } from './brevo'
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vipaymanshalaby@gmail.com'
+// ── ALLOWED USERS ─────────────────────────────────────────────────────────────
+// Add any Gmail address here to grant them full access.
+// All allowed users get 'admin' plan (unlimited everything).
+const ALLOWED_EMAILS: string[] = [
+  'vipaymanshalaby@gmail.com',
+  // 'client@gmail.com',
+  // 'partner@gmail.com',
+]
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -14,31 +20,22 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: 'jwt',
   },
-  events: {
-    async signIn({ user, isNewUser }) {
-      if (isNewUser && user.email) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://vidsyncro.com'
-        const tmpl = emailTemplates.welcome(user.name || '', `${appUrl}/dashboard`)
-        await sendEmail({
-          to: { email: user.email, name: user.name || undefined },
-          ...tmpl,
-        }).catch((err) => console.error('Welcome email failed:', err))
-      }
-    },
-  },
   callbacks: {
     async signIn({ user }) {
-      // Allow all sign ins
+      // Block anyone not on the allowlist
+      if (!user.email || !ALLOWED_EMAILS.includes(user.email)) {
+        return '/auth/signin?error=AccessDenied'
+      }
       return true
     },
-    async jwt({ token, user, account }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id
         token.email = user.email
         token.name = user.name
         token.picture = user.image
-        // Assign admin plan to admin email, else default free
-        token.plan = user.email === ADMIN_EMAIL ? 'admin' : 'free'
+        // All allowed users get admin plan
+        token.plan = 'admin'
       }
       return token
     },
@@ -75,7 +72,6 @@ declare module 'next-auth' {
       plan: string
     }
   }
-
   interface User {
     id: string
     plan?: string
