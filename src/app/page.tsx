@@ -35,15 +35,20 @@ export default function LandingPage() {
             <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">VS</div>
             <span className="font-bold text-white">VidSyncro</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {session ? (
               <Link href="/dashboard" className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
                 Dashboard
               </Link>
             ) : (
-              <a href="mailto:info@vidsyncro.com" className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-                Request Access
-              </a>
+              <>
+                <Link href="/auth/signin" className="text-gray-400 hover:text-white text-sm font-medium transition-colors px-3 py-2">
+                  Sign In
+                </Link>
+                <a href="mailto:info@vidsyncro.com" className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+                  Request Access
+                </a>
+              </>
             )}
           </div>
         </div>
@@ -168,4 +173,4 @@ export default function LandingPage() {
 
     </div>
   )
-}
+      }
