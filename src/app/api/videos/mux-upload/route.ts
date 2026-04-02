@@ -74,10 +74,8 @@ export async function POST(req: NextRequest) {
       .eq('id', projectId)
 
     return NextResponse.json({ uploadUrl, uploadId })
-  } catch (err: any) {
+  } catch (err) {
     console.error('Mux upload error:', err)
-    // Expose real error for debugging
-    const message = err?.message || err?.error?.message || JSON.stringify(err)
-    return NextResponse.json({ error: 'Failed to create upload URL', detail: message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create upload URL' }, { status: 500 })
   }
 }
