@@ -157,8 +157,8 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   const togglePlay = useCallback(() => {
     const a = videoARef.current
     if (!a) return
-    if (a.paused) playBoth(); else pauseBoth()
-  }, [playBoth, pauseBoth])
+    if (isPlaying) pauseBoth(); else playBoth()
+  }, [isPlaying, playBoth, pauseBoth])
 
   // Switch: audio follows the visible video once unmuted
   const switchToB = useCallback(() => {
@@ -408,6 +408,18 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
       {showingA && oc.labelA && (
         <div className="absolute top-3 left-3 z-10 pointer-events-none">
           <span className="bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium">{oc.labelA}</span>
+        </div>
+      )}
+
+      {/* Reality B label — B only */}
+      {showingB && (
+        <div className="absolute top-3 left-3 z-10 pointer-events-none">
+          <span
+            className="text-white text-xs px-2.5 py-1 rounded-full font-medium"
+            style={{ background: oc.indicatorColor || '#8b5cf6' }}
+          >
+            {oc.labelB || 'Reality B'}
+          </span>
         </div>
       )}
 
