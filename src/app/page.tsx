@@ -80,16 +80,8 @@ function BeforeAfterSlider() {
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         >
-          <img
-            src="/day.jpg"
-            alt="Reality B - Day"
-            className="absolute inset-0 w-full h-full object-cover"
-            draggable={false}
-          />
-          <div
-            className="absolute inset-0 overflow-hidden"
-            style={{ width: sliderPos + '%' }}
-          >
+          <img src="/day.jpg" alt="Reality B - Day" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+          <div className="absolute inset-0 overflow-hidden" style={{ width: sliderPos + '%' }}>
             <img
               src="/night.jpg"
               alt="Reality A - Night"
@@ -98,10 +90,7 @@ function BeforeAfterSlider() {
               draggable={false}
             />
           </div>
-          <div
-            className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg"
-            style={{ left: sliderPos + '%', transform: 'translateX(-50%)' }}
-          >
+          <div className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg" style={{ left: sliderPos + '%', transform: 'translateX(-50%)' }}>
             <div
               className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white shadow-xl flex items-center justify-center"
               style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
@@ -112,15 +101,9 @@ function BeforeAfterSlider() {
               </svg>
             </div>
           </div>
-          <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium pointer-events-none">
-            Reality A
-          </div>
-          <div className="absolute top-3 right-3 bg-purple-600/80 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium pointer-events-none">
-            Reality B
-          </div>
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm border border-white/20 rounded-full px-4 py-1.5 text-xs text-gray-200 pointer-events-none">
-            Drag to reveal
-          </div>
+          <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium pointer-events-none">Reality A</div>
+          <div className="absolute top-3 right-3 bg-purple-600/80 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium pointer-events-none">Reality B</div>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-sm border border-white/20 rounded-full px-4 py-1.5 text-xs text-gray-200 pointer-events-none">Drag to reveal</div>
         </div>
       </div>
     </div>
@@ -207,13 +190,33 @@ export default function LandingPage() {
       </section>
 
       {/* INTERACTIVE SLIDER */}
-      <section className="pb-20">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6, duration: 0.7 }}
-        >
+      <section className="pb-10">
+        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6, duration: 0.7 }}>
           <BeforeAfterSlider />
+        </motion.div>
+      </section>
+
+      {/* WATCH DEMO BUTTON */}
+      <section className="pb-16 flex justify-center px-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9, duration: 0.6 }}
+        >
+          <a
+            href="https://www.vidsyncro.com/app-demo-g4dsv-867174d8349c4e07"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="relative inline-flex items-center gap-3 px-10 py-5 rounded-2xl text-white font-bold text-xl transition-all duration-300 hover:scale-105"
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #ec4899 100%)',
+              boxShadow: '0 0 40px rgba(168, 85, 247, 0.6), 0 0 80px rgba(168, 85, 247, 0.3), 0 4px 24px rgba(0,0,0,0.4)',
+            }}
+          >
+            <span style={{ filter: 'drop-shadow(0 0 8px rgba(255,255,255,0.8))' }}>&#9654;</span>
+            Watch Demo
+            <span className="absolute inset-0 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 60%)', pointerEvents: 'none' }} />
+          </a>
         </motion.div>
       </section>
 
