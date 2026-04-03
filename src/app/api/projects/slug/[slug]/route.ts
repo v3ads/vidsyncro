@@ -27,6 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
     status: raw.status,
     totalViews: raw.total_views,
     totalInteractions: raw.total_interactions,
+    clientSlug: raw.client_slug || null,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   }
