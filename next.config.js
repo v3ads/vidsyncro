@@ -55,6 +55,16 @@ const nextConfig = {
           ],
           destination: '/embed/:path*',
         },
+        {
+          source: '/:path*',
+          has: [
+            {
+              type: 'host',
+              value: '(?<subdomain>[^.]+)\.vidframe\.io',
+            },
+          ],
+          destination: '/embed/:path*',
+        },
       ],
     }
   },
