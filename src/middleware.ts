@@ -16,9 +16,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
+  // Handle vidframe.io root and www → /vidframe landing page
+  if (hostname === 'vidframe.io' || hostname === 'www.vidframe.io') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/vidframe'
+    return NextResponse.rewrite(url)
+  }
+
   // Handle *.vidframe.io → /embed/[id]
   // Any subdomain of vidframe.io is a client-branded embed domain
-  if (hostname.endsWith('.vidframe.io') && hostname !== 'www.vidframe.io') {
+  if (hostname.endsWith('.vidframe.io')) {
     const url = request.nextUrl.clone()
     url.pathname = `/embed${pathname}`
     return NextResponse.rewrite(url)
