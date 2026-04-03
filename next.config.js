@@ -42,16 +42,16 @@ const nextConfig = {
           has: [{ type: 'host', value: embedHostname }],
           destination: '/embed/:path*',
         },
-        // vidframe.io root → /vidframe landing (exact match, must come before wildcard)
+        // vidframe.io root → static landing HTML (served from /public)
         {
           source: '/',
           has: [{ type: 'host', value: 'vidframe.io' }],
-          destination: '/vidframe',
+          destination: '/vidframe-landing.html',
         },
         {
           source: '/',
           has: [{ type: 'host', value: 'www.vidframe.io' }],
-          destination: '/vidframe',
+          destination: '/vidframe-landing.html',
         },
         // *.vidframe.io subdomains → embed player (wildcard, must come AFTER exact matches)
         {
