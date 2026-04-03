@@ -55,6 +55,28 @@ const nextConfig = {
           ],
           destination: '/embed/:path*',
         },
+        // vidframe.io root and www → clean landing page
+        {
+          source: '/:path*',
+          has: [
+            {
+              type: 'host',
+              value: 'vidframe.io',
+            },
+          ],
+          destination: '/vidframe',
+        },
+        {
+          source: '/:path*',
+          has: [
+            {
+              type: 'host',
+              value: 'www.vidframe.io',
+            },
+          ],
+          destination: '/vidframe',
+        },
+        // *.vidframe.io subdomains → embed player
         {
           source: '/:path*',
           has: [
