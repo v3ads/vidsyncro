@@ -53,12 +53,7 @@ const nextConfig = {
           has: [{ type: 'host', value: 'www.vidframe.io' }],
           destination: '/vidframe-landing.html',
         },
-        // *.vidframe.io subdomains → embed player (wildcard, must come AFTER exact matches)
-        {
-          source: '/:path*',
-          has: [{ type: 'host', value: '(?<subdomain>[^.]+)\\.vidframe\\.io' }],
-          destination: '/embed/:path*',
-        },
+
       ],
     }
   },
