@@ -14,7 +14,12 @@ function attachHls(
     videoEl.addEventListener('canplay', onReady, { once: true })
     return null
   } else if (Hls.isSupported()) {
-    const hls = new Hls({ enableWorker: true, lowLatencyMode: false, maxBufferLength: 30, maxMaxBufferLength: 60 })
+    const hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: false,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+    })
     hls.loadSource(src)
     hls.attachMedia(videoEl)
     hls.on(Hls.Events.MANIFEST_PARSED, onReady)
@@ -45,7 +50,6 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionIdRef = useRef(Math.random().toString(36).slice(2))
   const viewTrackedRef = useRef(false)
-  const stalledByRef = useRef<'a' | 'b' | null>(null)
 
   const [showingB, setShowingB] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -57,7 +61,6 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   const [switchFlash, setSwitchFlash] = useState(false)
   const [showControls, setShowControls] = useState(false)
   const [isTouchDevice, setIsTouchDevice] = useState(false)
-  const [isBuffering, setIsBuffering] = useState(false)
   const [isPasswordUnlocked, setIsPasswordUnlocked] = useState(!project.embedConfig.passwordProtected)
   const [passwordInput, setPasswordInput] = useState('')
   const [passwordError, setPasswordError] = useState(false)
@@ -108,9 +111,11 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     const b = videoBRef.current
     if (!a || !b) return
     if (ec.autoplay) {
-      a.muted = true; b.muted = true
+      a.muted = true
+      b.muted = true
       Promise.all([a.play().catch(() => {}), b.play().catch(() => {})]).then(() => {
-        setIsPlaying(true); setIsMuted(true)
+        setIsPlaying(true)
+        setIsMuted(true)
       })
     }
     if (isTouchDevice) {
@@ -120,58 +125,33 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded])
 
-  // Stall recovery + buffering indicator
-  useEffect(() => {
-    if (!isLoaded) return
-    const a = videoARef.current; const b = videoBRef.current
-    if (!a || !b) return
-    let bufferTimeout: ReturnType<typeof setTimeout> | null = null
-    const onWaiting = (which: 'a' | 'b') => () => {
-      if (a.paused && b.paused) return
-      stalledByRef.current = which
-      bufferTimeout = setTimeout(() => setIsBuffering(true), 400)
-      if (which === 'a') b.pause(); else a.pause()
-    }
-    const onPlaying = (which: 'a' | 'b') => () => {
-      if (stalledByRef.current !== which) return
-      stalledByRef.current = null
-      if (bufferTimeout) { clearTimeout(bufferTimeout); bufferTimeout = null }
-      setIsBuffering(false)
-      const active = which === 'a' ? a : b; const other = which === 'a' ? b : a
-      other.currentTime = active.currentTime
-      Promise.all([a.play().catch(() => {}), b.play().catch(() => {})])
-    }
-    const onWaitingA = onWaiting('a'); const onWaitingB = onWaiting('b')
-    const onPlayingA = onPlaying('a'); const onPlayingB = onPlaying('b')
-    a.addEventListener('waiting', onWaitingA); b.addEventListener('waiting', onWaitingB)
-    a.addEventListener('playing', onPlayingA); b.addEventListener('playing', onPlayingB)
-    return () => {
-      a.removeEventListener('waiting', onWaitingA); b.removeEventListener('waiting', onWaitingB)
-      a.removeEventListener('playing', onPlayingA); b.removeEventListener('playing', onPlayingB)
-      if (bufferTimeout) clearTimeout(bufferTimeout)
-    }
-  }, [isLoaded])
-
   // One-tap unmute. Always on Video A (button never shown during B).
   // After unmute, switchToA/B carry sound to whichever video is visible.
   const handleUnmute = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation(); e.preventDefault()
-    const a = videoARef.current; const b = videoBRef.current
+    e.stopPropagation()
+    e.preventDefault()
+    const a = videoARef.current
+    const b = videoBRef.current
     if (!a || !b) return
-    a.muted = false; b.muted = true
+    a.muted = false
+    b.muted = true
     setIsMuted(false)
   }, [])
 
   const playBoth = useCallback(() => {
-    const a = videoARef.current; const b = videoBRef.current
+    const a = videoARef.current
+    const b = videoBRef.current
     if (!a || !b) return
     Promise.all([a.play().catch(() => {}), b.play().catch(() => {})]).then(() => setIsPlaying(true))
   }, [])
 
   const pauseBoth = useCallback(() => {
-    const a = videoARef.current; const b = videoBRef.current
+    const a = videoARef.current
+    const b = videoBRef.current
     if (!a || !b) return
-    a.pause(); b.pause(); setIsPlaying(false)
+    a.pause()
+    b.pause()
+    setIsPlaying(false)
   }, [])
 
   const togglePlay = useCallback(() => {
@@ -182,11 +162,13 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
 
   // Switch: audio follows the visible video once unmuted
   const switchToB = useCallback(() => {
-    const a = videoARef.current; const b = videoBRef.current
+    const a = videoARef.current
+    const b = videoBRef.current
     if (!a || !b) return
     b.currentTime = a.currentTime
     if (!isMuted) { a.muted = true; b.muted = false }
-    setShowingB(true); setSwitchFlash(true)
+    setShowingB(true)
+    setSwitchFlash(true)
     setTimeout(() => setSwitchFlash(false), 300)
     holdStartRef.current = Date.now()
     if (oc.showHint) setShowHint(false)
@@ -194,7 +176,8 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
   }, [oc.showHint, isMuted, trackEvent])
 
   const switchToA = useCallback(() => {
-    const a = videoARef.current; const b = videoBRef.current
+    const a = videoARef.current
+    const b = videoBRef.current
     if (!a || !b) return
     a.currentTime = b.currentTime
     if (!isMuted) { b.muted = true; a.muted = false }
@@ -273,7 +256,8 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
       if (e.code === 'Space') { e.preventDefault(); togglePlay() }
       if (e.code === 'KeyH') { if (e.type === 'keydown') switchToB(); else switchToA() }
     }
-    window.addEventListener('keydown', onKey); window.addEventListener('keyup', onKey)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('keyup', onKey)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey) }
   }, [togglePlay, switchToA, switchToB])
 
@@ -387,14 +371,6 @@ export default function VidSyncroPlayer({ project, onAnalyticsEvent, preview = f
         <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center gap-3 z-20">
           <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-zinc-400 text-sm font-medium">Loading…</p>
-        </div>
-      )}
-
-      {/* Buffering — shown on both since it pauses both */}
-      {isLoaded && isBuffering && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-30 pointer-events-none" style={{ background: 'rgba(0,0,0,0.55)' }}>
-          <div className="w-10 h-10 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          <p className="text-white text-sm font-semibold tracking-widest">Buffering…</p>
         </div>
       )}
 
