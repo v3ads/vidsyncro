@@ -22,18 +22,9 @@ const nextConfig = {
       {
         source: '/embed/:path*',
         headers: [
-          {
-            key: 'X-Frame-Options',
-            value: 'ALLOWALL',
-          },
-          {
-            key: 'Content-Security-Policy',
-            value: "frame-ancestors *;",
-          },
-          {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
-          },
+          { key: 'X-Frame-Options', value: 'ALLOWALL' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors *;" },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
         ],
       },
     ]
@@ -45,46 +36,27 @@ const nextConfig = {
 
     return {
       beforeFiles: [
+        // embed.vidsyncro.com → /embed/[id]
         {
           source: '/:path*',
-          has: [
-            {
-              type: 'host',
-              value: embedHostname,
-            },
-          ],
+          has: [{ type: 'host', value: embedHostname }],
           destination: '/embed/:path*',
         },
-        // vidframe.io root and www → clean landing page
+        // vidframe.io root → /vidframe landing (exact match, must come before wildcard)
         {
-          source: '/:path*',
-          has: [
-            {
-              type: 'host',
-              value: 'vidframe.io',
-            },
-          ],
+          source: '/',
+          has: [{ type: 'host', value: 'vidframe.io' }],
           destination: '/vidframe',
         },
         {
-          source: '/:path*',
-          has: [
-            {
-              type: 'host',
-              value: 'www.vidframe.io',
-            },
-          ],
+          source: '/',
+          has: [{ type: 'host', value: 'www.vidframe.io' }],
           destination: '/vidframe',
         },
-        // *.vidframe.io subdomains → embed player
+        // *.vidframe.io subdomains → embed player (wildcard, must come AFTER exact matches)
         {
           source: '/:path*',
-          has: [
-            {
-              type: 'host',
-              value: '(?<subdomain>[^.]+)\.vidframe\.io',
-            },
-          ],
+          has: [{ type: 'host', value: '(?<subdomain>[^.]+)\\.vidframe\\.io' }],
           destination: '/embed/:path*',
         },
       ],
