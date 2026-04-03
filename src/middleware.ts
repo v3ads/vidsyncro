@@ -5,12 +5,20 @@ import { getToken } from 'next-auth/jwt'
 export async function middleware(request: NextRequest) {
   const { pathname, hostname } = request.nextUrl
 
-  // Handle embed subdomain: embed.vidsyncro.com/[id] → /embed/[id]
+  // Handle embed.vidsyncro.com → /embed/[id]
   const embedHostname = process.env.NEXT_PUBLIC_EMBED_URL
     ? new URL(process.env.NEXT_PUBLIC_EMBED_URL).hostname
     : 'embed.vidsyncro.com'
 
   if (hostname === embedHostname) {
+    const url = request.nextUrl.clone()
+    url.pathname = `/embed${pathname}`
+    return NextResponse.rewrite(url)
+  }
+
+  // Handle *.vidframe.io → /embed/[id]
+  // Any subdomain of vidframe.io is a client-branded embed domain
+  if (hostname.endsWith('.vidframe.io') && hostname !== 'www.vidframe.io') {
     const url = request.nextUrl.clone()
     url.pathname = `/embed${pathname}`
     return NextResponse.rewrite(url)

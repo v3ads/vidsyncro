@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (error) return NextResponse.json({ error }, { status: error === 'Forbidden' ? 403 : 404 })
 
   const body = await req.json()
-  const allowed = ['title', 'description', 'overlay_config', 'embed_config', 'status', 'video_a', 'video_b']
+  const allowed = ['title', 'description', 'overlay_config', 'embed_config', 'status', 'video_a', 'video_b', 'client_slug']
   const updates: Record<string, unknown> = {}
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]

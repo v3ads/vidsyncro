@@ -61,6 +61,7 @@ export interface Project {
   status: 'draft' | 'published' | 'archived'
   totalViews: number
   totalInteractions: number
+  clientSlug: string | null
   createdAt: string
   updatedAt: string
 }

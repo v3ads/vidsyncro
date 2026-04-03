@@ -56,7 +56,10 @@ export default function EditorPage() {
   const [replacingB, setReplacingB] = useState(false)
 
   const appUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.vidsyncro.com'
-  const embedUrl = project ? `${appUrl}/${project.slug}` : ''
+  const clientEmbedUrl = project?.clientSlug
+    ? `https://${project.clientSlug}.vidframe.io/${project.id}`
+    : null
+  const embedUrl = clientEmbedUrl || (project ? `https://embed.vidsyncro.com/${project.id}` : '')
   const iframeCode = project
     ? `<iframe src="${embedUrl}" width="100%" style="aspect-ratio:16/9;border:none;" allowfullscreen></iframe>`
     : ''
@@ -70,6 +73,7 @@ export default function EditorPage() {
           id: data.id, userId: data.user_id, title: data.title, slug: data.slug,
           description: data.description, videoA: data.video_a, videoB: data.video_b,
           overlayConfig: data.overlay_config, embedConfig: data.embed_config,
+          clientSlug: data.client_slug || null,
           status: data.status, totalViews: data.total_views, totalInteractions: data.total_interactions,
           createdAt: data.created_at, updatedAt: data.updated_at,
         })
@@ -96,6 +100,7 @@ export default function EditorPage() {
         description: project.description,
         overlay_config: project.overlayConfig,
         embed_config: project.embedConfig,
+        client_slug: project.clientSlug || null,
         status: project.status,
       }),
     })
@@ -394,6 +399,30 @@ export default function EditorPage() {
             {/* ── EMBED TAB ── */}
             {activeTab === 'Embed' && (
               <div className="space-y-4">
+                <div>
+                  <Label>Client Slug</Label>
+                  <p className="text-zinc-500 text-xs mb-2">Sets the branded URL: <span className="text-violet-400 font-mono">[slug].vidframe.io/{project?.id}</span>. Leave blank to use the default embed URL.</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 text-xs font-mono whitespace-nowrap">https://</span>
+                    <input
+                      value={project?.clientSlug || ''}
+                      onChange={e => {
+                        const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
+                        setProject(p => p ? { ...p, clientSlug: val || null } : p)
+                      }}
+                      placeholder="pepsi"
+                      className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 border border-white/10 text-sm text-white font-mono focus:outline-none focus:border-violet-500 transition-colors"
+                    />
+                    <span className="text-zinc-500 text-xs font-mono whitespace-nowrap">.vidframe.io</span>
+                  </div>
+                  {project?.clientSlug && (
+                    <div className="mt-2 p-3 rounded-lg bg-violet-900/20 border border-violet-500/20">
+                      <p className="text-xs text-violet-300 font-medium mb-1">✓ Client URL ready</p>
+                      <p className="text-xs text-zinc-400 font-mono break-all">https://{project.clientSlug}.vidframe.io/{project?.id}</p>
+                      <p className="text-xs text-zinc-500 mt-1">No DNS setup needed — wildcard already configured.</p>
+                    </div>
+                  )}
+                </div>
                 <div>
                   <Label>Embed Code</Label>
                   <div className="relative">
