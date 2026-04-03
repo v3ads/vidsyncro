@@ -4,14 +4,12 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { Project } from '@/types'
 import Hls from 'hls.js'
 
-// ── HLS attachment ────────────────────────────────────────────────────────────
 function attachHls(
   videoEl: HTMLVideoElement,
   src: string,
   onReady: () => void,
 ): Hls | null {
   if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-    // Safari native HLS
     videoEl.src = src
     videoEl.addEventListener('canplay', onReady, { once: true })
     return null
@@ -19,7 +17,6 @@ function attachHls(
     const hls = new Hls({
       enableWorker: true,
       lowLatencyMode: false,
-      // Buffer aggressively so both videos stay ahead
       maxBufferLength: 30,
       maxMaxBufferLength: 60,
     })
@@ -55,18 +52,18 @@ export default function VidSyncroPlayer({
   const hlsARef = useRef<Hls | null>(null)
   const hlsBRef = useRef<Hls | null>(null)
 
-  // Interaction refs
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pointerDownTimeRef = useRef<number>(0)
+  const pointerDownTimeRef = useRef(0)
   const holdStartRef = useRef<number | null>(null)
   const autoSwitchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sessionIdRef = useRef<string>(Math.random().toString(36).slice(2))
+  const sessionIdRef = useRef(Math.random().toString(36).slice(2))
   const viewTrackedRef = useRef(false)
+  const stalledByRef = useRef<'a' | 'b' | null>(null)
 
-  // UI state
   const [showingB, setShowingB] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(true)
   const [loadedA, setLoadedA] = useState(false)
   const [loadedB, setLoadedB] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -74,6 +71,7 @@ export default function VidSyncroPlayer({
   const [switchFlash, setSwitchFlash] = useState(false)
   const [showControls, setShowControls] = useState(false)
   const [isTouchDevice, setIsTouchDevice] = useState(false)
+  const [isBuffering, setIsBuffering] = useState(false)
   const [isPasswordUnlocked, setIsPasswordUnlocked] = useState(
     !project.embedConfig.passwordProtected,
   )
@@ -90,7 +88,6 @@ export default function VidSyncroPlayer({
     setIsTouchDevice(window.matchMedia('(hover: none) and (pointer: coarse)').matches)
   }, [])
 
-  // ── Analytics ─────────────────────────────────────────────────────────────
   const trackEvent = useCallback(
     (type: string, data: Record<string, unknown> = {}) => {
       if (preview) return
@@ -118,13 +115,12 @@ export default function VidSyncroPlayer({
     }
   }, [isPasswordUnlocked, trackEvent])
 
-  // ── Attach HLS — both videos load in parallel ─────────────────────────────
   useEffect(() => {
     const a = videoARef.current
     if (!a || !videoA?.muxPlaybackId) return
     hlsARef.current = attachHls(a, getMuxHlsUrl(videoA.muxPlaybackId), () => setLoadedA(true))
     return () => { hlsARef.current?.destroy(); hlsARef.current = null }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoA?.muxPlaybackId])
 
   useEffect(() => {
@@ -132,12 +128,11 @@ export default function VidSyncroPlayer({
     if (!b || !videoB?.muxPlaybackId) return
     hlsBRef.current = attachHls(b, getMuxHlsUrl(videoB.muxPlaybackId), () => setLoadedB(true))
     return () => { hlsBRef.current?.destroy(); hlsBRef.current = null }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoB?.muxPlaybackId])
 
-  // ── Start both videos together once both are ready ────────────────────────
-  // Both videos play simultaneously at all times. Switching is purely visual
-  // (CSS opacity). This eliminates ALL sync/stall/feedback-loop issues.
+  // ── Autoplay: both start muted (browser policy requirement on mobile).
+  // A prominent unmute button lets the user restore sound in one tap.
   useEffect(() => {
     if (!isLoaded) return
     const a = videoARef.current
@@ -145,33 +140,90 @@ export default function VidSyncroPlayer({
     if (!a || !b) return
 
     if (ec.autoplay) {
-      // Mute both initially so autoplay is allowed by the browser,
-      // then unmute the active one after play starts
       a.muted = true
       b.muted = true
       Promise.all([a.play().catch(() => {}), b.play().catch(() => {})]).then(() => {
         setIsPlaying(true)
-        // Unmute the active video (A by default), keep B muted
-        if (!ec.muted) {
-          a.muted = false
-          b.muted = true
-        }
+        setIsMuted(true)
       })
     }
 
-    // Show controls briefly on load for touch devices
     if (isTouchDevice) {
       setShowControls(true)
       controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 2500)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded])
 
-  // ── Play / Pause — always operates on BOTH videos ─────────────────────────
+  // ── Stall recovery + buffering indicator ──────────────────────────────────
+  useEffect(() => {
+    if (!isLoaded) return
+    const a = videoARef.current
+    const b = videoBRef.current
+    if (!a || !b) return
+
+    let bufferTimeout: ReturnType<typeof setTimeout> | null = null
+
+    const onWaiting = (which: 'a' | 'b') => () => {
+      if (a.paused && b.paused) return
+      stalledByRef.current = which
+      bufferTimeout = setTimeout(() => setIsBuffering(true), 400)
+      if (which === 'a') b.pause()
+      else a.pause()
+    }
+
+    const onPlaying = (which: 'a' | 'b') => () => {
+      if (stalledByRef.current !== which) return
+      stalledByRef.current = null
+      if (bufferTimeout) { clearTimeout(bufferTimeout); bufferTimeout = null }
+      setIsBuffering(false)
+      const active = which === 'a' ? a : b
+      const other = which === 'a' ? b : a
+      other.currentTime = active.currentTime
+      Promise.all([a.play().catch(() => {}), b.play().catch(() => {})])
+    }
+
+    const onWaitingA = onWaiting('a')
+    const onWaitingB = onWaiting('b')
+    const onPlayingA = onPlaying('a')
+    const onPlayingB = onPlaying('b')
+
+    a.addEventListener('waiting', onWaitingA)
+    b.addEventListener('waiting', onWaitingB)
+    a.addEventListener('playing', onPlayingA)
+    b.addEventListener('playing', onPlayingB)
+
+    return () => {
+      a.removeEventListener('waiting', onWaitingA)
+      b.removeEventListener('waiting', onWaitingB)
+      a.removeEventListener('playing', onPlayingA)
+      b.removeEventListener('playing', onPlayingB)
+      if (bufferTimeout) clearTimeout(bufferTimeout)
+    }
+  }, [isLoaded])
+
+  // ── Unmute: one tap restores sound on the active video, keeps B muted ─────
+  const handleUnmute = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation()
+    const a = videoARef.current
+    const b = videoBRef.current
+    if (!a || !b) return
+    if (showingB) {
+      b.muted = false
+      a.muted = true
+    } else {
+      a.muted = false
+      b.muted = true
+    }
+    setIsMuted(false)
+  }, [showingB])
+
+  // ── Play / Pause ───────────────────────────────────────────────────────────
   const playBoth = useCallback(() => {
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
+    // Keep current mute state — don't force mute on manual play
     Promise.all([a.play().catch(() => {}), b.play().catch(() => {})]).then(() => {
       setIsPlaying(true)
     })
@@ -192,34 +244,34 @@ export default function VidSyncroPlayer({
     if (a.paused) playBoth(); else pauseBoth()
   }, [playBoth, pauseBoth])
 
-  // ── Switch — pure CSS, no play/pause calls ────────────────────────────────
+  // ── Switch ─────────────────────────────────────────────────────────────────
   const switchToB = useCallback(() => {
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
-    // Audio: mute A, unmute B (unless global mute is on)
-    if (!ec.muted) { a.muted = true; b.muted = false }
+    b.currentTime = a.currentTime
+    if (!isMuted) { a.muted = true; b.muted = false }
     setShowingB(true)
     setSwitchFlash(true)
     setTimeout(() => setSwitchFlash(false), 300)
     holdStartRef.current = Date.now()
     if (oc.showHint) setShowHint(false)
     trackEvent('hold_start', { currentTime: a.currentTime })
-  }, [oc.showHint, ec.muted, trackEvent])
+  }, [oc.showHint, isMuted, trackEvent])
 
   const switchToA = useCallback(() => {
     const a = videoARef.current
     const b = videoBRef.current
     if (!a || !b) return
-    // Audio: unmute A, mute B (unless global mute is on)
-    if (!ec.muted) { b.muted = true; a.muted = false }
+    a.currentTime = b.currentTime
+    if (!isMuted) { b.muted = true; a.muted = false }
     setShowingB(false)
     if (holdStartRef.current) {
       const duration = (Date.now() - holdStartRef.current) / 1000
       trackEvent('hold_end', { duration, currentTime: b.currentTime })
       holdStartRef.current = null
     }
-  }, [ec.muted, trackEvent])
+  }, [isMuted, trackEvent])
 
   // ── Auto-switch ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -263,9 +315,7 @@ export default function VidSyncroPlayer({
 
   const handleMouseEnter = useCallback(
     (e: React.MouseEvent) => {
-      if (oc.switchMode === 'hover') {
-        if (e.buttons === 0) switchToB()
-      }
+      if (oc.switchMode === 'hover' && e.buttons === 0) switchToB()
     },
     [oc.switchMode, switchToB],
   )
@@ -273,7 +323,8 @@ export default function VidSyncroPlayer({
   // ── Touch handlers ────────────────────────────────────────────────────────
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'BUTTON') return
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'BUTTON') return
       if (oc.switchMode === 'hold') {
         pointerDownTimeRef.current = Date.now()
         holdTimerRef.current = setTimeout(() => {
@@ -289,7 +340,8 @@ export default function VidSyncroPlayer({
 
   const handleTouchEnd = useCallback(
     (e: React.TouchEvent) => {
-      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'BUTTON') return
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'BUTTON') return
       if (oc.switchMode === 'hold') {
         if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null }
         const elapsed = Date.now() - pointerDownTimeRef.current
@@ -324,7 +376,6 @@ export default function VidSyncroPlayer({
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
 
-  // ── Controls auto-hide ────────────────────────────────────────────────────
   const showControlsTemporarily = useCallback(() => {
     setShowControls(true)
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current)
@@ -337,27 +388,21 @@ export default function VidSyncroPlayer({
   }
 
   const getVideoAStyle = (): React.CSSProperties => {
-    const base: React.CSSProperties = {
-      ...transitionStyle,
-      position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-    }
-    if (oc.transitionType === 'crossfade')   return { ...base, opacity: showingB ? 0 : 1, zIndex: showingB ? 1 : 2 }
-    if (oc.transitionType === 'slide-left')  return { ...base, transform: showingB ? 'translateX(-100%)' : 'translateX(0)', zIndex: showingB ? 1 : 2 }
+    const base: React.CSSProperties = { ...transitionStyle, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }
+    if (oc.transitionType === 'crossfade') return { ...base, opacity: showingB ? 0 : 1, zIndex: showingB ? 1 : 2 }
+    if (oc.transitionType === 'slide-left') return { ...base, transform: showingB ? 'translateX(-100%)' : 'translateX(0)', zIndex: showingB ? 1 : 2 }
     if (oc.transitionType === 'slide-right') return { ...base, transform: showingB ? 'translateX(100%)' : 'translateX(0)', zIndex: showingB ? 1 : 2 }
-    if (oc.transitionType === 'zoom')        return { ...base, opacity: showingB ? 0 : 1, transform: showingB ? 'scale(1.08)' : 'scale(1)', zIndex: showingB ? 1 : 2 }
+    if (oc.transitionType === 'zoom') return { ...base, opacity: showingB ? 0 : 1, transform: showingB ? 'scale(1.08)' : 'scale(1)', zIndex: showingB ? 1 : 2 }
     if (oc.transitionType === 'blur-reveal') return { ...base, opacity: showingB ? 0 : 1, filter: showingB ? 'blur(12px)' : 'blur(0px)', zIndex: showingB ? 1 : 2 }
     return { ...base, opacity: showingB ? 0 : 1, zIndex: 2 }
   }
 
   const getVideoBStyle = (): React.CSSProperties => {
-    const base: React.CSSProperties = {
-      ...transitionStyle,
-      position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-    }
-    if (oc.transitionType === 'crossfade')   return { ...base, opacity: showingB ? 1 : 0, zIndex: showingB ? 2 : 1 }
-    if (oc.transitionType === 'slide-left')  return { ...base, transform: showingB ? 'translateX(0)' : 'translateX(100%)', zIndex: showingB ? 2 : 1 }
+    const base: React.CSSProperties = { ...transitionStyle, position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }
+    if (oc.transitionType === 'crossfade') return { ...base, opacity: showingB ? 1 : 0, zIndex: showingB ? 2 : 1 }
+    if (oc.transitionType === 'slide-left') return { ...base, transform: showingB ? 'translateX(0)' : 'translateX(100%)', zIndex: showingB ? 2 : 1 }
     if (oc.transitionType === 'slide-right') return { ...base, transform: showingB ? 'translateX(0)' : 'translateX(-100%)', zIndex: showingB ? 2 : 1 }
-    if (oc.transitionType === 'zoom')        return { ...base, opacity: showingB ? 1 : 0, transform: showingB ? 'scale(1)' : 'scale(0.95)', zIndex: showingB ? 2 : 1 }
+    if (oc.transitionType === 'zoom') return { ...base, opacity: showingB ? 1 : 0, transform: showingB ? 'scale(1)' : 'scale(0.95)', zIndex: showingB ? 2 : 1 }
     if (oc.transitionType === 'blur-reveal') return { ...base, opacity: showingB ? 1 : 0, filter: showingB ? 'blur(0px)' : 'blur(8px)', zIndex: showingB ? 2 : 1 }
     return { ...base, opacity: showingB ? 1 : 0, zIndex: 1 }
   }
@@ -369,18 +414,13 @@ export default function VidSyncroPlayer({
     'top-center': 'top-3 left-1/2 -translate-x-1/2',
   }
 
-  // ── Password screen ───────────────────────────────────────────────────────
   if (!isPasswordUnlocked) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} className="bg-zinc-950">
-        <div className="text-center p-6 w-full max-w-xs">
-          <div className="w-12 h-12 rounded-full bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-          <h3 className="text-white font-semibold text-base mb-1">Password Required</h3>
-          <p className="text-zinc-400 text-sm mb-4">Enter the password to view this video</p>
+      <div className="relative w-full h-full bg-zinc-950 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-4 text-center">
+          <div className="text-4xl mb-2">🔒</div>
+          <h3 className="text-white font-semibold text-lg">Password Required</h3>
+          <p className="text-zinc-400 text-sm">Enter the password to view this video</p>
           <input
             type="password"
             value={passwordInput}
@@ -395,7 +435,7 @@ export default function VidSyncroPlayer({
             style={{ fontSize: 16 }}
             className={`w-full px-3 py-3 rounded-xl bg-zinc-800 border ${passwordError ? 'border-red-500' : 'border-white/10'} text-white placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors`}
           />
-          {passwordError && <p className="text-red-400 text-xs mt-2">Incorrect password</p>}
+          {passwordError && <p className="text-red-400 text-sm">Incorrect password</p>}
           <button
             onClick={() => {
               if (passwordInput === project.embedConfig.password) setIsPasswordUnlocked(true)
@@ -411,34 +451,19 @@ export default function VidSyncroPlayer({
     )
   }
 
-  // ── No videos yet ─────────────────────────────────────────────────────────
   if (!ready) {
     return (
-      <div style={{ position: 'absolute', inset: 0 }} className="flex items-center justify-center bg-zinc-950">
-        <div className="text-center">
-          <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-3">
-            <svg className="w-6 h-6 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-            </svg>
-          </div>
-          <p className="text-zinc-400 text-sm">Videos processing…</p>
-        </div>
+      <div className="relative w-full h-full bg-zinc-950 flex items-center justify-center">
+        <p className="text-zinc-500 text-sm">Videos processing…</p>
       </div>
     )
   }
 
-  // ── Main player ───────────────────────────────────────────────────────────
   return (
     <div
       ref={containerRef}
-      style={{
-        position: 'absolute', inset: 0,
-        backgroundColor: ec.backgroundColor || '#000',
-        cursor: oc.switchMode === 'hold' ? 'pointer' : 'default',
-        userSelect: 'none', WebkitUserSelect: 'none',
-        WebkitTouchCallout: 'none', touchAction: 'none',
-        overflow: 'hidden',
-      }}
+      className="relative w-full h-full bg-black overflow-hidden select-none"
+      style={{ cursor: 'pointer' }}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
@@ -448,135 +473,158 @@ export default function VidSyncroPlayer({
       onTouchEnd={handleTouchEnd}
       onContextMenu={e => e.preventDefault()}
     >
-      {/* ── Video A — always playing, visible when showingB=false ── */}
+      {/* Video A — muted attribute required for mobile autoplay */}
       <video
         ref={videoARef}
         style={getVideoAStyle()}
         playsInline
-        muted={ec.muted}
+        muted
         loop={ec.loop}
         preload="auto"
-        poster={getMuxThumbUrl(videoA.muxPlaybackId!)}
+        poster={getMuxThumbUrl(videoA!.muxPlaybackId!, 0)}
       />
 
-      {/* ── Video B — always playing, visible when showingB=true ── */}
+      {/* Video B — always muted, unmuted only when showing and user taps unmute */}
       <video
         ref={videoBRef}
         style={getVideoBStyle()}
         playsInline
-        muted   /* starts muted; unmuted imperatively in switchToB */
+        muted
         loop={ec.loop}
         preload="auto"
-        poster={getMuxThumbUrl(videoB!.muxPlaybackId!)}
+        poster={getMuxThumbUrl(videoB!.muxPlaybackId!, 0)}
       />
 
-      {/* ── Loading skeleton ── */}
+      {/* Initial loading skeleton */}
       {!isLoaded && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 50 }} className="bg-zinc-950 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 rounded-full border-2 border-violet-500/20 border-t-violet-500 animate-spin" />
-            <p className="text-zinc-500 text-xs">Loading…</p>
-          </div>
+        <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center gap-3 z-20">
+          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-zinc-400 text-sm font-medium">Loading…</p>
         </div>
       )}
 
-      {/* ── Switch flash border ── */}
+      {/* Buffering overlay */}
+      {isLoaded && isBuffering && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-30 pointer-events-none"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+        >
+          <div className="w-10 h-10 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          <p className="text-white text-sm font-semibold tracking-widest">Buffering…</p>
+        </div>
+      )}
+
+      {/* ── UNMUTE BUTTON — top right, visible whenever muted ── */}
+      {isLoaded && isPlaying && isMuted && !ec.muted && (
+        <button
+          onClick={handleUnmute}
+          onTouchEnd={handleUnmute as any}
+          className="absolute top-3 right-3 z-40 flex items-center gap-2 text-white font-bold text-sm rounded-full px-4 py-2 transition-all active:scale-95"
+          style={{
+            background: 'rgba(124, 58, 237, 0.85)',
+            backdropFilter: 'blur(8px)',
+            boxShadow: '0 0 20px rgba(124,58,237,0.6), 0 2px 8px rgba(0,0,0,0.4)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            minWidth: 44,
+            minHeight: 44,
+          }}
+        >
+          {/* Muted speaker icon */}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+            <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+          </svg>
+          Tap to unmute
+        </button>
+      )}
+
+      {/* Switch flash border */}
       {oc.showSwitchIndicator && switchFlash && (
         <div
-          style={{
-            position: 'absolute', inset: 0, zIndex: 30, pointerEvents: 'none',
-            boxShadow: `inset 0 0 0 2px ${oc.indicatorColor || '#8b5cf6'}, 0 0 24px ${oc.indicatorColor || '#8b5cf6'}50`,
-            transition: 'opacity 0.15s ease',
-          }}
+          className="absolute inset-0 z-20 pointer-events-none rounded-sm"
+          style={{ boxShadow: `inset 0 0 0 3px ${oc.indicatorColor || '#8b5cf6'}` }}
         />
       )}
 
-      {/* ── Hint badge ── */}
+      {/* Hint badge */}
       {oc.showHint && showHint && isLoaded && !showingB && (
-        <div className={`absolute z-20 pointer-events-none ${hintPositionClass[oc.hintPosition] || hintPositionClass['bottom-center']}`}>
-          <div
-            className="flex items-center gap-2 rounded-full text-white whitespace-nowrap"
-            style={{
-              background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              padding: isTouchDevice ? '7px 14px' : '6px 14px',
-              fontSize: isTouchDevice ? 13 : 12,
-            }}
-          >
-            <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, backgroundColor: oc.indicatorColor || '#8b5cf6', animation: 'pulse 2s infinite' }} />
+        <div className={`absolute z-10 pointer-events-none ${hintPositionClass[oc.hintPosition || 'bottom-center'] || hintPositionClass['bottom-center']}`}>
+          <span className="bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full font-medium">
             {oc.hintText || (
               oc.switchMode === 'hold' ? 'Hold to reveal'
               : oc.switchMode === 'toggle' ? 'Tap to switch'
               : 'Hover to reveal'
             )}
-          </div>
+          </span>
         </div>
       )}
 
-      {/* ── Reality A badge ── */}
+      {/* Reality A badge */}
       {!showingB && oc.labelA && (
-        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 20, pointerEvents: 'none' }}>
-          <div className="font-medium" style={{ padding: '3px 10px', borderRadius: 99, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.8)', fontSize: 11 }}>
+        <div className="absolute top-3 left-3 z-10 pointer-events-none">
+          <span className="bg-black/60 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-full font-medium">
             {oc.labelA}
-          </div>
+          </span>
         </div>
       )}
 
-      {/* ── Reality B badge ── */}
+      {/* Reality B badge */}
       {showingB && (
-        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 20, pointerEvents: 'none' }}>
-          <div className="font-medium" style={{ padding: '3px 10px', borderRadius: 99, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(34,211,238,0.3)', color: '#67e8f9', fontSize: 11 }}>
+        <div className="absolute top-3 left-3 z-10 pointer-events-none">
+          <span
+            className="text-white text-xs px-2.5 py-1 rounded-full font-medium"
+            style={{ background: oc.indicatorColor || '#8b5cf6' }}
+          >
             {oc.labelB || 'Reality B'}
-          </div>
+          </span>
         </div>
       )}
 
-      {/* ── Controls overlay ── */}
+      {/* Controls overlay */}
       {(showControls || !isPlaying) && isLoaded && (
-        <div
-          style={{
-            position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none',
-            background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 40%)',
-          }}
-        >
-          {/* Play button — only when paused */}
+        <div className="absolute inset-0 z-10 flex flex-col justify-end pointer-events-none">
           {!isPlaying && (
-            <div
-              style={{
-                position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                pointerEvents: oc.switchMode === 'hold' ? 'none' : 'auto',
-              }}
-              onClick={oc.switchMode !== 'hold' ? togglePlay : undefined}
-            >
-              <div style={{ width: isTouchDevice ? 60 : 52, height: isTouchDevice ? 60 : 52, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg style={{ width: 22, height: 22, color: '#fff', marginLeft: 3 }} fill="currentColor" viewBox="0 0 24 24">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-auto">
+              <button
+                onClick={e => { e.stopPropagation(); playBoth() }}
+                className="w-16 h-16 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" className="w-7 h-7 text-white fill-current ml-1">
                   <path d="M8 5v14l11-7z" />
                 </svg>
-              </div>
+              </button>
             </div>
           )}
-
-          {/* Bottom bar */}
-          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isTouchDevice ? '10px 14px' : '8px 12px', pointerEvents: 'auto' }}>
+          <div
+            className="flex items-center justify-between px-3 py-2 pointer-events-auto"
+            style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)' }}
+          >
             <button
-              onClick={togglePlay}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.8)', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44 }}
+              onClick={e => { e.stopPropagation(); togglePlay() }}
+              className="text-white p-1 hover:text-violet-300 transition-colors"
             >
               {isPlaying ? (
-                <svg style={{ width: 18, height: 18 }} fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                </svg>
               ) : (
-                <svg style={{ width: 18, height: 18 }} fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
               )}
             </button>
             {ec.allowFullscreen && (
               <button
-                onClick={toggleFullscreen}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.8)', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44 }}
+                onClick={e => { e.stopPropagation(); toggleFullscreen() }}
+                className="text-white p-1 hover:text-violet-300 transition-colors"
               >
                 {isFullscreen ? (
-                  <svg style={{ width: 18, height: 18 }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9V4.5M9 9H4.5M15 9h4.5M15 9V4.5M9 15v4.5M9 15H4.5M15 15h4.5M15 15v4.5" /></svg>
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+                    <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
+                  </svg>
                 ) : (
-                  <svg style={{ width: 18, height: 18 }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" /></svg>
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
+                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+                  </svg>
                 )}
               </button>
             )}
@@ -584,14 +632,20 @@ export default function VidSyncroPlayer({
         </div>
       )}
 
-      {/* ── Branding ── */}
+      {/* Branding */}
       {oc.brandingVisible && oc.brandingText && (
-        <div style={{ position: 'absolute', bottom: 6, left: 10, zIndex: 10, pointerEvents: 'none' }}>
-          <a href={oc.brandingUrl || '#'} target="_blank" rel="noopener noreferrer" style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, textDecoration: 'none', pointerEvents: 'auto' }}>
+        <div className="absolute bottom-2 right-2 z-10 pointer-events-auto">
+          <a
+            href={oc.brandingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-white/50 text-xs hover:text-white/80 transition-colors"
+            onClick={e => e.stopPropagation()}
+          >
             {oc.brandingText}
           </a>
         </div>
       )}
     </div>
   )
-}
+        }
