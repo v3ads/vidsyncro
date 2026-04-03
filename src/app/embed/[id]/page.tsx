@@ -50,38 +50,5 @@ export default async function EmbedPage({ params }: Props) {
     updatedAt: raw.updated_at,
   }
 
-  return (
-    <html lang="en">
-      <head>
-        {/* Critical for mobile iframe responsiveness */}
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-        <meta name="theme-color" content="#000000" />
-        <style>{`
-          *, *::before, *::after { box-sizing: border-box; }
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            background: ${raw.embed_config?.backgroundColor || '#000'};
-            -webkit-tap-highlight-color: transparent;
-            touch-action: none;
-          }
-          #embed-root {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-        `}</style>
-      </head>
-      <body>
-        <div id="embed-root">
-          <EmbedPlayer project={project} />
-        </div>
-      </body>
-    </html>
-  )
+  return <EmbedPlayer project={project} />
 }
