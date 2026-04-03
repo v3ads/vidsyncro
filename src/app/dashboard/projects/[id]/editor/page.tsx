@@ -401,7 +401,7 @@ export default function EditorPage() {
               <div className="space-y-4">
                 <div>
                   <Label>Client Slug</Label>
-                  <p className="text-zinc-500 text-xs mb-2">Sets the branded URL: <span className="text-violet-400 font-mono">[slug].vidframe.io/{project?.id}</span>. Leave blank to use the default embed URL.</p>
+                  <p className="text-zinc-500 text-xs mb-2">Sets the branded URL: <span className="text-violet-400 font-mono">[slug].vidframe.io/{project?.id ?? ''}</span>. Leave blank to use the default embed URL.</p>
                   <div className="flex items-center gap-2">
                     <span className="text-zinc-500 text-xs font-mono whitespace-nowrap">https://</span>
                     <input
@@ -418,7 +418,7 @@ export default function EditorPage() {
                   {project?.clientSlug && (
                     <div className="mt-2 p-3 rounded-lg bg-violet-900/20 border border-violet-500/20">
                       <p className="text-xs text-violet-300 font-medium mb-1">✓ Client URL ready</p>
-                      <p className="text-xs text-zinc-400 font-mono break-all">https://{project.clientSlug}.vidframe.io/{project?.id}</p>
+                      <p className="text-xs text-zinc-400 font-mono break-all">{`https://${project.clientSlug}.vidframe.io/${project?.id}`}</p>
                       <p className="text-xs text-zinc-500 mt-1">No DNS setup needed — wildcard already configured.</p>
                     </div>
                   )}
