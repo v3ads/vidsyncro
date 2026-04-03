@@ -9,7 +9,7 @@ function attachHls(
   src: string,
   onReady: () => void,
 ): Hls | null {
-  if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+  if (videoEl.canPlayType('application/vnd.apple.mpegurl') === 'probably') {
     videoEl.src = src
     videoEl.addEventListener('canplay', onReady, { once: true })
     return null
